@@ -6,9 +6,25 @@
 
 [English](README.md) | 简体中文
 
-> **对着多色耗材盘聊两句许个愿，直接吐出可打印的 `.3MF`。** — 支持 **Windows / macOS 原生桌面端**、**iOS / Android 手机端（PWA 扫码直连 + Capacitor 原生封装）**、浏览器与命令行。
+> **对着多色耗材盘聊两句许个愿，直接吐出可打印的 `.3MF`。** — 支持 **Windows / macOS 原生桌面端**、**iOS / Android 手机端（PWA 扫码直连 + Capacitor 原生封装）**、**主流 AI Agent 一键自动部署与 MCP 调用**、浏览器与命令行。
 
 用自然语言对话或结合 **MakerWorld** 公开模型参考，先出 **2D 效果图确认配色与毫米级尺寸**，再自动路由至参数化 CAD 或本地 AI 3D 引擎，一键导出可直接拖入 **Bambu Studio / OrcaSlicer** 切片打印的 `.3mf`、`.stl` 与 `.step` 文件。普通无独显电脑开箱即用，配备 **RTX 5090 (`cu128`) / RTX 30–40 (`cu124`) / Apple Silicon MPS** 时自动启用本地 GPU 加速。
+
+---
+
+## 🤖 发给主流 AI Agent，一句话自动安装并本地部署
+
+只需把这个仓库网址发给 **Claude Code、Codex、Antigravity、Cursor、Windsurf、Cline、OpenClaw 或 Gemini CLI**，直接说一句：
+
+> **「帮我按照 `https://github.com/ZhihaoRenKevin/spoolgenie` 里的 `AGENTS.md` 在本机自动安装部署 SpoolGenie，接入它的 MCP 工具并启动界面。」**
+
+仓库已按主流 Agent 标准原生内置全套对接文件：
+- **[`AGENTS.md`](AGENTS.md) + [`CLAUDE.md`](CLAUDE.md) + [`llms.txt`](llms.txt)**：Agent 读取网页即可按固定步骤自动拉取、建虚拟环境、识别本机 GPU/CPU、跑 `doctor` 体检并启动服务。
+- **跨平台免交互一键部署脚本**：
+  - Windows PowerShell：`irm https://raw.githubusercontent.com/ZhihaoRenKevin/spoolgenie/main/scripts/install.ps1 | iex`
+  - macOS / Linux：`curl -fsSL https://raw.githubusercontent.com/ZhihaoRenKevin/spoolgenie/main/scripts/install.sh | bash`
+- **零依赖原生 MCP Server（[`.mcp.json`](.mcp.json) + `spoolgenie mcp` + `spoolgenie agent-config`）**：对外提供 **7 个标准 MCP 工具**（硬件检测、MakerWorld 实时搜索、2D 概念设计、3D 与拓竹 `.3MF` 导出、网格上色、项目列表、手机扫码局域网地址），Claude Desktop / Claude Code / Codex / Cursor / Antigravity / OpenClaw 均可直接调用。
+- **通用 Agent Skill**：[`skills/spoolgenie/SKILL.md`](skills/spoolgenie/SKILL.md) 可直接导入支持 Skill 的任意 Agent。
 
 ---
 

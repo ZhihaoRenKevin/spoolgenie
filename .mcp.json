@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "spoolgenie": {
+      "command": "spoolgenie-mcp",
+      "args": []
+    }
+  }
+}

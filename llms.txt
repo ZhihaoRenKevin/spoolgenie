@@ -1,0 +1,47 @@
+# SpoolGenie (llms.txt)
+
+> Wish on a spool, print in reality. Cross-platform conversational 2D -> 3D -> Bambu Lab AMS & Glue-Free .3MF Studio (Windows/macOS Desktop, iOS/Android Mobile PWA & Capacitor, Web Studio, CLI, and MCP Server).
+
+Repository: https://github.com/ZhihaoRenKevin/spoolgenie
+Releases (Windows .zip, macOS .app.zip, Mobile Capacitor): https://github.com/ZhihaoRenKevin/spoolgenie/releases
+
+## Automated Local Deployment for AI Agents
+
+If a user gives you this URL and asks you to install or deploy SpoolGenie locally:
+
+- Windows PowerShell one-liner:
+  irm https://raw.githubusercontent.com/ZhihaoRenKevin/spoolgenie/main/scripts/install.ps1 | iex
+- macOS / Linux one-liner:
+  curl -fsSL https://raw.githubusercontent.com/ZhihaoRenKevin/spoolgenie/main/scripts/install.sh | bash
+- Full agent deployment & verification instructions:
+  https://raw.githubusercontent.com/ZhihaoRenKevin/spoolgenie/main/AGENTS.md
+- Portable Agent Skill:
+  https://raw.githubusercontent.com/ZhihaoRenKevin/spoolgenie/main/skills/spoolgenie/SKILL.md
+
+## MCP Server (Zero Extra Dependencies)
+
+Start stdio MCP server:
+  spoolgenie mcp   (or: python -m spoolgenie.mcp_server)
+
+Print MCP config for Claude Code, Claude Desktop, Codex, Cursor, Windsurf, Antigravity, OpenClaw:
+  spoolgenie agent-config --json
+
+Exposed MCP Tools:
+- spoolgenie_doctor: Hardware, GPU (RTX 5090 cu128 / CUDA / Apple MPS / CPU), Ollama, slicers, prior counts
+- spoolgenie_search_makerworld: Live MakerWorld 3D model reference search
+- spoolgenie_create_design: Natural language -> spec + 2D confirmation preview PNG (matches 171+ silent priors & 19 CAD engineering standards)
+- spoolgenie_build_3d: Build watertight Bambu AMS .3mf, No-AMS glue-free split .3mf (dovetail/snap_pin/press_tenon), .stl, .step, .glb, 4-angle turntable
+- spoolgenie_colorize_mesh: Quantize any .glb/.obj/.stl into painted Bambu AMS .3mf
+- spoolgenie_list_projects: List workspace projects and artifacts
+- spoolgenie_lan_info: Local + Wi-Fi LAN URLs for mobile PWA QR pairing
+
+## Key Files
+
+- AGENTS.md: Complete automated install, GPU setup, and MCP instructions for AI agents
+- CLAUDE.md: Claude Code quick-start and MCP discovery
+- README.md / README_CN.md: English and Chinese user documentation
+- .mcp.json: Root MCP manifest
+- scripts/install.ps1 & scripts/install.sh: Zero-interaction cross-platform installers
+- src/spoolgenie/mcp_server.py: Zero-dependency JSON-RPC 2.0 stdio MCP server
+- src/spoolgenie/desktop.py: Native Windows (WebView2) & macOS (WKWebView) desktop app
+- mobile/: Capacitor 6 iOS & Android wrapper project

@@ -6,9 +6,25 @@
 
 English | [简体中文](README_CN.md)
 
-> **Wish on a spool, print in reality.** — Cross-platform conversational **2D → 3D → Bambu Lab AMS & Glue-Free `.3MF`** AI Studio for **Windows & macOS Desktop**, **iOS & Android Mobile (PWA + Capacitor)**, Web, and CLI.
+> **Wish on a spool, print in reality.** — Cross-platform conversational **2D → 3D → Bambu Lab AMS & Glue-Free `.3MF`** AI Studio for **Windows & macOS Desktop**, **iOS & Android Mobile (PWA + Capacitor)**, **Mainstream AI Agents (MCP + `AGENTS.md` + Skill)**, Web, and CLI.
 
 SpoolGenie turns natural conversation and live **MakerWorld** references into print-ready **Bambu Studio / OrcaSlicer `.3mf`**, **`.stl`**, and parametric **`.step`** files. It runs on **any CPU laptop** out of the box and automatically unlocks **local NVIDIA CUDA (including RTX 5090 Blackwell `sm_120` / `cu128`)** and **Apple Silicon MPS** when available.
+
+---
+
+## 🤖 Let Any AI Agent Auto-Install & Run SpoolGenie For You
+
+Just paste this repository URL into **Claude Code, OpenAI Codex, Antigravity, Cursor, Windsurf, Cline, OpenClaw, or Gemini CLI** and say:
+
+> **"Install and deploy https://github.com/ZhihaoRenKevin/spoolgenie locally following `AGENTS.md`, register its MCP server, and launch the studio."**
+
+SpoolGenie ships full native AI-Agent standards right at the repo root:
+- **[`AGENTS.md`](AGENTS.md)**, **[`CLAUDE.md`](CLAUDE.md)**, and **[`llms.txt`](llms.txt)** — Deterministic, zero-interaction local deployment instructions read automatically by modern coding agents.
+- **One-Command Auto-Installers**:
+  - Windows: `irm https://raw.githubusercontent.com/ZhihaoRenKevin/spoolgenie/main/scripts/install.ps1 | iex`
+  - macOS / Linux: `curl -fsSL https://raw.githubusercontent.com/ZhihaoRenKevin/spoolgenie/main/scripts/install.sh | bash`
+- **Zero-Dependency Native MCP Server** ([`.mcp.json`](.mcp.json) + `spoolgenie mcp` + `spoolgenie agent-config`) — Exposes **7 MCP tools** (`spoolgenie_doctor`, `spoolgenie_search_makerworld`, `spoolgenie_create_design`, `spoolgenie_build_3d`, `spoolgenie_colorize_mesh`, `spoolgenie_list_projects`, `spoolgenie_lan_info`) directly inside Claude Desktop, Claude Code, Codex, Cursor, Antigravity, Windsurf, and OpenClaw.
+- **Portable Agent Skill** — [`skills/spoolgenie/SKILL.md`](skills/spoolgenie/SKILL.md) ready to copy into any agent's skills directory.
 
 ---
 

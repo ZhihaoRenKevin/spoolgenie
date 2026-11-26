@@ -89,6 +89,49 @@ def desktop(
 
 
 @app.command()
+def mcp() -> None:
+    """Run the zero-dependency Model Context Protocol (MCP) stdio server for AI agents (Claude, Codex, Cursor, Antigravity, Windsurf, OpenClaw)."""
+    from spoolgenie.mcp_server import serve_stdio
+
+    serve_stdio()
+
+
+@app.command("agent-config")
+def agent_config(
+    format_json: bool = typer.Option(False, "--json", help="Print machine-readable JSON only (ideal for AI agents)"),
+    write_cursor: bool = typer.Option(False, "--write-cursor", help="Write .cursor/mcp.json in current directory"),
+) -> None:
+    """Print or write ready-to-use MCP configuration for Claude Code, Claude Desktop, Codex, Cursor, Windsurf, Antigravity, and OpenClaw."""
+    import json
+
+    from spoolgenie.mcp_server import build_agent_configs
+
+    cfg = build_agent_configs()
+    if write_cursor:
+        dst = Path(".cursor") / "mcp.json"
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        dst.write_text(json.dumps(cfg["mcp_json"], indent=2) + "\n", encoding="utf-8")
+        console.print(f"[green]Wrote Cursor MCP config:[/green] {dst.resolve()}")
+        if format_json:
+            return
+
+    if format_json:
+        typer.echo(json.dumps(cfg, indent=2, ensure_ascii=False))
+        return
+
+    console.print(
+        Panel(
+            f"[bold]Claude Code:[/bold]\n  {cfg['claude_code_cli']}\n\n"
+            f"[bold]OpenAI Codex CLI:[/bold]\n  {cfg['codex_cli']}\n\n"
+            f"[bold]Claude Desktop / Cursor / Windsurf / Antigravity / OpenClaw MCP JSON:[/bold]\n"
+            + json.dumps(cfg["mcp_json"], indent=2)
+            + f"\n\n[bold]Portable Agent Skill:[/bold] {cfg['skill_path']}",
+            title="SpoolGenie AI-Agent MCP Integration",
+        )
+    )
+
+
+@app.command()
 def makerworld(
     query: str = typer.Argument(..., help="Search keywords for MakerWorld reference models"),
     limit: int = typer.Option(6, help="Max search results"),

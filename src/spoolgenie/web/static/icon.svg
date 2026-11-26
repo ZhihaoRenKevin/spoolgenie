@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#f36c21"/>
+      <stop offset="55%" stop-color="#ff8c38"/>
+      <stop offset="100%" stop-color="#ffb648"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="116" fill="url(#bg)"/>
+  <!-- Filament Spool Body -->
+  <g fill="none" stroke="#ffffff" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="242" cy="278" r="136" stroke-width="26"/>
+    <circle cx="242" cy="278" r="46" stroke-width="24"/>
+    <!-- 3 Filament Spool Cutout Dots -->
+    <circle cx="242" cy="190" r="14" fill="#ffffff" stroke="none"/>
+    <circle cx="166" cy="322" r="14" fill="#ffffff" stroke="none"/>
+    <circle cx="318" cy="322" r="14" fill="#ffffff" stroke="none"/>
+    <!-- Magic Filament Thread Sweeping Upward into Genie Sparkle -->
+    <path d="M352 198 C392 162, 396 124, 370 96" stroke-width="20"/>
+  </g>
+  <!-- 4-Point Genie Magic Sparkle Star -->
+  <path d="M372 52 L386 92 L426 106 L386 120 L372 160 L358 120 L318 106 L358 92 Z" fill="#fff7d6"/>
+  <circle cx="428" cy="166" r="10" fill="#fff7d6"/>
+</svg>

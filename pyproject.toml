@@ -1,0 +1,99 @@
+[build-system]
+requires = ["hatchling>=1.24.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "spoolgenie"
+version = "0.2.0"
+description = "Cross-platform conversational 2D-to-3D-to-3MF AI studio for Bambu Lab AMS & FDM 3D printing (Windows/macOS Desktop + Mobile PWA/Capacitor + CLI)."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+authors = [{ name = "SpoolGenie Contributors" }]
+keywords = ["3d-printing", "bambu-lab", "3mf", "ams", "cad", "build123d", "hunyuan3d", "ai-agent"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: End Users/Desktop",
+    "Intended Audience :: Manufacturing",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+
+dependencies = [
+    "pydantic>=2.8.0",
+    "pydantic-settings>=2.4.0",
+    "httpx>=0.27.0",
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.30.0",
+    "python-multipart>=0.0.9",
+    "typer>=0.12.0",
+    "rich>=13.7.0",
+    "numpy>=1.26.0",
+    "scipy>=1.13.0",
+    "Pillow>=10.4.0",
+    "trimesh>=4.4.0",
+    "manifold3d>=2.5.1",
+    "scikit-learn>=1.5.0",
+    "build123d>=0.7.0",
+    "ddgs>=8.0.0",
+    "segno>=1.6.1",
+]
+
+[project.optional-dependencies]
+desktop = [
+    "pywebview>=5.3",
+    "pyinstaller>=6.10",
+]
+local-2d = [
+    "diffusers>=0.31.0,<0.37.0",
+    "transformers>=4.46.0,<5.0.0",
+    "huggingface-hub>=0.26.0,<1.0.0",
+    "accelerate>=1.0.0",
+    "safetensors>=0.4.5",
+    "sentencepiece>=0.2.0",
+]
+local-3d = [
+    "diffusers>=0.31.0,<0.37.0",
+    "transformers>=4.46.0,<5.0.0",
+    "huggingface-hub>=0.26.0,<1.0.0",
+    "accelerate>=1.0.0",
+    "einops>=0.8.0",
+    "omegaconf>=2.3.0",
+    "rembg>=2.0.59",
+    "onnxruntime>=1.19.0",
+    "scikit-image>=0.24.0",
+    "pymeshlab>=2023.12",
+]
+dev = [
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.24.0",
+    "httpx>=0.27.0",
+    "ruff>=0.6.0",
+]
+
+[project.scripts]
+spoolgenie = "spoolgenie.cli:app"
+spoolgenie-desktop = "spoolgenie.desktop:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/spoolgenie"]
+artifacts = [
+    "src/spoolgenie/knowledge/data/*.json",
+    "src/spoolgenie/web/static/*",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+asyncio_default_fixture_loop_scope = "function"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]
+ignore = ["E501"]

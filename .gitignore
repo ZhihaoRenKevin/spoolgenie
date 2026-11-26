@@ -1,0 +1,30 @@
+# Python / uv
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+dist/
+build/
+*.spec
+*.egg-info/
+
+# Local runtime outputs & downloaded weights
+outputs/
+models_cache/
+loras/
+.env
+.env.local
+
+# Mobile Capacitor generated build artifacts
+mobile/node_modules/
+mobile/ios/
+mobile/android/
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

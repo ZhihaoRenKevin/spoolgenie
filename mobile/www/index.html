@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#0b0f17" />
+  <title>SpoolGenie Mobile</title>
+  <style>
+    :root {
+      --bg: #0b0f17; --card: #151d2c; --border: #28344a;
+      --text: #edf2fb; --muted: #8f9eb8; --accent: #f36c21; --ok: #00ae42;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; min-height: 100dvh; background: var(--bg); color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", sans-serif;
+      display: flex; align-items: center; justify-content: center;
+      padding: max(20px, env(safe-area-inset-top)) 18px max(20px, env(safe-area-inset-bottom));
+    }
+    .box {
+      width: 100%; max-width: 420px; background: var(--card);
+      border: 1px solid var(--border); border-radius: 16px; padding: 22px;
+      display: flex; flex-direction: column; gap: 14px;
+    }
+    .brand { display: flex; align-items: center; gap: 12px; }
+    .logo {
+      width: 44px; height: 44px; border-radius: 12px;
+      background: linear-gradient(135deg, #f36c21, #ff9a4d);
+      display: grid; place-items: center; flex-shrink: 0;
+    }
+    h1 { margin: 0; font-size: 18px; }
+    .sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
+    label { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--muted); }
+    input {
+      background: #0d131f; color: var(--text); border: 1px solid var(--border);
+      border-radius: 10px; padding: 12px; font-size: 14px; width: 100%;
+    }
+    .btn {
+      border: none; border-radius: 10px; padding: 13px; font-size: 14px; font-weight: 700;
+      background: linear-gradient(135deg, var(--accent), #e65810); color: #fff; cursor: pointer;
+    }
+    .btn.sec { background: #222e43; font-weight: 600; font-size: 12.5px; padding: 9px; }
+    .status {
+      font-size: 12px; padding: 10px; border-radius: 9px; background: #101724;
+      border: 1px solid var(--border); color: var(--muted); line-height: 1.5;
+    }
+    .status.ok { border-color: rgba(0, 174, 66, 0.45); color: #8af0af; }
+    .status.err { border-color: rgba(239, 68, 68, 0.5); color: #fecaca; }
+    .row { display: flex; justify-content: space-between; align-items: center; }
+  </style>
+</head>
+<body>
+  <main class="box">
+    <div class="row">
+      <div class="brand">
+        <div class="logo">
+          <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round">
+            <circle cx="10.5" cy="13.5" r="7"/><circle cx="10.5" cy="13.5" r="2.3"/>
+            <path d="M16.2 8.5 C18.5 6.8 18.8 5.1 17.6 3.8"/>
+            <path d="M18.2 1.8 L19.1 4.2 L21.5 5.1 L19.1 6 L18.2 8.4 L17.3 6 L14.9 5.1 L17.3 4.2 Z" fill="#fff7d6" stroke="none"/>
+          </svg>
+        </div>
+        <div>
+          <h1>SpoolGenie Mobile</h1>
+          <div class="sub" id="subTxt">连接局域网 PC/Mac 算力 · 手机直接出 3D 打印 .3MF</div>
+        </div>
+      </div>
+      <button id="langBtn" class="btn sec" type="button">EN</button>
+    </div>
+
+    <label>
+      <span id="urlLbl">电脑端 SpoolGenie 服务地址 (LAN IP 或 HTTPS 地址)</span>
+      <input id="serverInput" type="url" placeholder="http://192.168.1.100:8765" />
+    </label>
+
+    <button id="connectBtn" class="btn" type="button">连接并进入 SpoolGenie</button>
+
+    <div id="statusBox" class="status">
+      在电脑端打开 SpoolGenie Desktop（或运行 <code>spoolgenie serve --lan</code>），点右上角「📱 手机」即可查看 IP 地址。
+    </div>
+  </main>
+
+  <script>
+    const input = document.getElementById('serverInput');
+    const statusBox = document.getElementById('statusBox');
+    let lang = localStorage.getItem('pf_mobile_lang') || ((navigator.language || '').startsWith('zh') ? 'zh' : 'en');
+
+    const COPY = {
+      zh: {
+        langBtn: 'EN',
+        sub: '连接局域网 PC/Mac 算力 · 手机直接出 3D 打印 .3MF',
+        urlLbl: '电脑端 SpoolGenie 服务地址 (LAN IP 或 HTTPS 地址)',
+        btn: '连接并进入 SpoolGenie',
+        hint: '在电脑端打开 SpoolGenie Desktop（或运行 spoolgenie serve --lan），点右上角「📱 手机」即可查看地址。',
+        checking: '正在检测电脑端硬件与接口…',
+        err: (m) => `无法连接到该地址：${m}\n请确认手机和电脑在同一 Wi-Fi，且电脑端已开启 --lan 模式。`,
+      },
+      en: {
+        langBtn: '中文',
+        sub: 'Pair with your PC/Mac GPU · Design & export .3MF from your phone',
+        urlLbl: 'Host SpoolGenie URL (LAN IP or HTTPS)',
+        btn: 'Connect & Launch Studio',
+        hint: 'Launch SpoolGenie Desktop on Windows/Mac (or run "spoolgenie serve --lan"), then tap "📱 Mobile" for the LAN URL.',
+        checking: 'Checking host GPU & SpoolGenie API…',
+        err: (m) => `Connection failed: ${m}\nEnsure phone & computer share the same Wi-Fi and LAN mode is enabled.`,
+      },
+    };
+
+    function applyCopy() {
+      const c = COPY[lang];
+      document.getElementById('langBtn').textContent = c.langBtn;
+      document.getElementById('subTxt').textContent = c.sub;
+      document.getElementById('urlLbl').textContent = c.urlLbl;
+      document.getElementById('connectBtn').textContent = c.btn;
+      statusBox.textContent = c.hint;
+    }
+
+    document.getElementById('langBtn').onclick = () => {
+      lang = lang === 'zh' ? 'en' : 'zh';
+      localStorage.setItem('pf_mobile_lang', lang);
+      applyCopy();
+    };
+
+    const params = new URLSearchParams(location.search);
+    const saved = params.get('server') || localStorage.getItem('pf_host_url') || '';
+    if (saved) input.value = saved;
+    applyCopy();
+
+    async function connect(urlRaw) {
+      let url = (urlRaw || '').trim().replace(/\/+$/, '');
+      if (!url) return;
+      if (!/^https?:\/\//i.test(url)) url = `http://${url}`;
+      statusBox.className = 'status';
+      statusBox.textContent = COPY[lang].checking;
+      try {
+        const resp = await fetch(`${url}/api/meta`, { mode: 'cors' });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const meta = await resp.json();
+        localStorage.setItem('pf_host_url', url);
+        statusBox.className = 'status ok';
+        const gpu = meta.doctor?.gpu_name || meta.doctor?.accelerator || 'CPU';
+        statusBox.textContent = `Connected! Host: ${gpu} · v${meta.version}`;
+        setTimeout(() => { location.href = url; }, 350);
+      } catch (e) {
+        statusBox.className = 'status err';
+        statusBox.textContent = COPY[lang].err(e.message || e);
+      }
+    }
+
+    document.getElementById('connectBtn').onclick = () => connect(input.value);
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') connect(input.value); });
+  </script>
+</body>
+</html>

@@ -1,0 +1,21 @@
+{
+  "name": "spoolgenie-mobile",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Native iOS & Android Capacitor wrapper for SpoolGenie (connects to local PC/Mac GPU or cloud SpoolGenie server)",
+  "scripts": {
+    "sync": "npx cap sync",
+    "ios:add": "npx cap add ios && npx cap sync ios",
+    "ios:open": "npx cap open ios",
+    "android:add": "npx cap add android && npx cap sync android",
+    "android:open": "npx cap open android"
+  },
+  "dependencies": {
+    "@capacitor/core": "^6.1.2"
+  },
+  "devDependencies": {
+    "@capacitor/android": "^6.1.2",
+    "@capacitor/cli": "^6.1.2",
+    "@capacitor/ios": "^6.1.2"
+  }
+}

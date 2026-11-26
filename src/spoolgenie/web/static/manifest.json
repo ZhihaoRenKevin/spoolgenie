@@ -1,0 +1,19 @@
+{
+  "name": "SpoolGenie",
+  "short_name": "SpoolGenie",
+  "description": "Conversational 2D-to-3D-to-3MF AI Studio for Bambu Lab AMS & Glue-Free 3D Printing",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0b0f17",
+  "theme_color": "#121824",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

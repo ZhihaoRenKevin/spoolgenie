@@ -60,7 +60,11 @@ def _mesh_to_manifold(mesh: trimesh.Trimesh) -> manifold3d.Manifold:
         ms.meshing_remove_duplicate_vertices()
         ms.meshing_remove_duplicate_faces()
         ms.compute_normal_per_vertex()
-        ms.generate_surface_reconstruction_screened_poisson(depth=7, preclean=True)
+        # High-definition Screened Poisson depth=9 (512^3 grid) preserves crisp silhouettes without melting features!
+        try:
+            ms.generate_surface_reconstruction_screened_poisson(depth=9, pointweight=4.0, preclean=True)
+        except Exception:
+            ms.generate_surface_reconstruction_screened_poisson(depth=8, preclean=True)
         m_out = ms.current_mesh()
         rebuilt = trimesh.Trimesh(vertices=m_out.vertex_matrix(), faces=m_out.face_matrix(), process=True)
         man = _try_manifold(rebuilt)

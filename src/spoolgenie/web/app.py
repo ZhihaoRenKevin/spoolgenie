@@ -352,6 +352,25 @@ def api_makerworld_search(q: str, limit: int = 6) -> list[dict[str, Any]]:
     return [r.model_dump() for r in search_makerworld(q, max_results=min(limit, 12))]
 
 
+class WebRAGRequest(BaseModel):
+    query: str | None = None
+    max_images: int = 4
+    max_3d_refs: int = 6
+
+
+@app.post("/api/projects/{project_id}/web-rag")
+def api_project_web_rag(project_id: str, req: WebRAGRequest | None = None) -> dict[str, Any]:
+    """Retrieve live multi-view character images + MakerWorld/Printables/Thingiverse 3D model references."""
+    req = req or WebRAGRequest()
+    session = _get_session(project_id)
+    pack = session.enrich_from_web_rag(
+        query=req.query,
+        max_images=min(max(req.max_images, 1), 6),
+        max_3d_refs=min(max(req.max_3d_refs, 1), 8),
+    )
+    return {"web_rag": pack, "project": _decorate_state_urls(session)}
+
+
 @app.post("/api/projects/{project_id}/references/url")
 def add_ref_url(project_id: str, req: MakerWorldURLRequest) -> dict[str, Any]:
     session = _get_session(project_id)

@@ -165,6 +165,45 @@ class DFMCheckItem(BaseModel):
     detail: str
 
 
+class PhysicsCheckItem(BaseModel):
+    name: str
+    name_zh: str
+    status: Literal["pass", "warn", "fail"]
+    metric: str
+    detail: str
+
+
+class PhysicsStabilityReport(BaseModel):
+    material_code: str = "PLA"
+    material_name: str = "Bambu PLA Basic / Matte"
+    density_g_cm3: float = 1.24
+    youngs_modulus_gpa: float = 2.6
+    tensile_xy_mpa: float = 46.0
+    tensile_z_mpa: float = 24.0
+    hdt_c: float = 55.0
+    load_scenario: str = "Desktop Display"
+    load_scenario_zh: str = "桌面摆件工况"
+    payload_mass_g: float = 0.0
+    self_mass_g: float = 0.0
+    center_of_mass_mm: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    support_area_mm2: float = 0.0
+    flat_bottom_area_mm2: float = 0.0
+    base_contact_ratio: float = 0.0
+    base_closed_solid: bool = True
+    tipping_margin_mm: float = 0.0
+    tilt_angle_unloaded_deg: float = 0.0
+    tilt_angle_loaded_deg: float = 0.0
+    tipping_force_n: float = 0.0
+    weakest_neck_z_mm: float = 0.0
+    weakest_neck_diam_mm: float = 0.0
+    peak_z_stress_mpa: float = 0.0
+    safety_factor_z: float = 10.0
+    tip_deflection_mm: float = 0.0
+    stability_score: int = 100
+    overall_verdict: Literal["stable", "caution", "unstable"] = "stable"
+    checks: list[PhysicsCheckItem] = Field(default_factory=list)
+
+
 class DFMReport(BaseModel):
     watertight: bool
     manifold_repaired: bool = False
@@ -184,6 +223,7 @@ class DFMReport(BaseModel):
     coloring_method: str = "modular_solid"
     color_decisions: list[ColorDecision] = Field(default_factory=list)
     filament_recommendations: list[FilamentMatchRecommendation] = Field(default_factory=list)
+    physics: PhysicsStabilityReport | None = None
     split_parts: list[SplitPartInfo] = Field(default_factory=list)
     checks: list[DFMCheckItem] = Field(default_factory=list)
 

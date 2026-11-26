@@ -38,8 +38,8 @@ class CADBuildResult:
 def execute_build123d_script(
     code: str,
     step_output_path: str | Path | None = None,
-    linear_deflection: float = 0.08,
-    angular_deflection: float = 0.15,
+    linear_deflection: float = 0.03,
+    angular_deflection: float = 0.08,
 ) -> list[CADPartMesh]:
     """Validate and execute a build123d script, returning tessellated Trimesh parts + optional STEP."""
     validate_cad_code_ast(code)

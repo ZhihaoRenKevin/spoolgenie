@@ -705,6 +705,63 @@ body {
   color: var(--text-2);
 }
 
+/* PHYSICS & STRUCTURAL STABILITY PANEL */
+.physics-box {
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  border-radius: 13px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.physics-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.physics-head strong { font-size: 13px; }
+.score-pill {
+  font-size: 11.5px;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 99px;
+  background: var(--bambu-soft);
+  color: var(--bambu-text);
+  border: 1px solid rgba(16, 185, 129, 0.35);
+}
+.score-pill.caution { background: rgba(245, 158, 11, 0.16); color: var(--warn); border-color: rgba(245, 158, 11, 0.4); }
+.score-pill.unstable { background: rgba(239, 68, 68, 0.16); color: var(--danger); border-color: rgba(239, 68, 68, 0.4); }
+.physics-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 7px;
+}
+.pkpi {
+  background: var(--surface-solid);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 7px 8px;
+  text-align: center;
+}
+.pkpi strong { display: block; font-size: 12.5px; color: var(--text); }
+.pkpi span { font-size: 10.5px; color: var(--muted); }
+.pcheck-list { display: flex; flex-direction: column; gap: 5px; font-size: 11.8px; }
+.pcheck {
+  padding: 6px 9px;
+  border-radius: 8px;
+  background: var(--surface-solid);
+  border-left: 3px solid var(--bambu);
+  line-height: 1.45;
+}
+.pcheck.warn { border-left-color: var(--warn); }
+.pcheck.fail { border-left-color: var(--danger); }
+@media (max-width: 768px) {
+  .physics-kpis { grid-template-columns: repeat(2, 1fr); }
+}
+
 .icard-actions {
   display: flex;
   flex-wrap: wrap;

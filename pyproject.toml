@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "spoolgenie"
-version = "0.5.0"
+version = "0.6.0"
 description = "Cross-platform conversational 2D-to-3D-to-3MF AI studio for Bambu Lab AMS & FDM 3D printing (Windows/macOS Desktop + Mobile PWA/Capacitor + CLI)."
 readme = "README.md"
 license = { text = "MIT" }

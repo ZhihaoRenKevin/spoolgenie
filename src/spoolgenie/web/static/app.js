@@ -95,6 +95,11 @@ const I18N = {
     rec_canon: (bambu) => `🎨 原著推荐：拓竹 ${bambu}`,
     buy_btn: '去拓竹官方商城下单 ↗',
     modules_title: '🧩 模块化整体上色分件（每个独立水密实体一个纯色，非表面涂色）：',
+    webrag_btn: '🌐 联网搜多图与 3D 参考',
+    webrag_busy: '正在全网检索原著多视角参考图与 MakerWorld/Printables 3D 模型…',
+    physics_title: '⚖️ 物理引擎 · 材料力学与满载稳定性评估',
+    pk_tilt: '满载抗倾覆角', pk_ftip: '侧推翻倒力', pk_fos: 'Z向层间安全系数', pk_base: '底面闭合接触',
+    verdict_stable: '稳固可靠', verdict_caution: '建议加固', verdict_unstable: '有倾覆/断裂风险',
     refresh_2d_btn: '🔄 应用修改 · 重绘 2D 幻象',
     build_3d_btn: '✨ 吟唱具现 · 铸造 3D 与 .3MF',
     rendering_2d_inline: '🧞‍♂️ 神灯正在凝结 2D 愿望幻象，你可以继续补充想法…',
@@ -197,6 +202,11 @@ const I18N = {
     rec_canon: (bambu) => `🎨 Canon palette: Bambu ${bambu}`,
     buy_btn: 'Bambu Official Store ↗',
     modules_title: '🧩 Modular Whole-Part Colored Solids (1 clean solid filament per module, zero surface paint):',
+    webrag_btn: '🌐 Web-RAG Multi-View & 3D Refs',
+    webrag_busy: 'Retrieving multi-view web references & MakerWorld/Printables 3D models…',
+    physics_title: '⚖️ Physics Engine · FDM Mechanics & Loaded Stability',
+    pk_tilt: 'Loaded Tip Angle', pk_ftip: 'Tipping Force', pk_fos: 'Z-Layer Safety (FOS)', pk_base: 'Closed Flat Base',
+    verdict_stable: 'Stable', verdict_caution: 'Caution', verdict_unstable: 'Unstable',
     refresh_2d_btn: '🔄 Update & Re-conjure 2D',
     build_3d_btn: '✨ Manifest 3D & .3MF',
     rendering_2d_inline: '🧞‍♂️ Conjuring your 2D wish vision in background — keep chatting anytime…',
@@ -652,7 +662,10 @@ function buildInlineSetupCard(spec, latestConcept) {
       </div>
 
       <div class="icard-actions">
-        <button type="button" class="btn btn-secondary js-refresh-2d" ${isBuilding3D ? 'disabled' : ''}>${t('refresh_2d_btn')}</button>
+        <div class="row">
+          <button type="button" class="btn btn-secondary js-webrag" ${isBuilding3D ? 'disabled' : ''}>${t('webrag_btn')}</button>
+          <button type="button" class="btn btn-secondary js-refresh-2d" ${isBuilding3D ? 'disabled' : ''}>${t('refresh_2d_btn')}</button>
+        </div>
         <div class="icard-actions-right">
           <button type="button" class="btn btn-magic js-build-3d" ${isBuilding3D ? 'disabled' : ''}>${t('build_3d_btn')}</button>
         </div>
@@ -767,6 +780,29 @@ function buildInlineSetupCard(spec, latestConcept) {
     renderStream();
   };
   refreshLiveFilamentMatch(spec, recListEl);
+
+  card.querySelector('.js-webrag').onclick = async (e) => {
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    setStatus(t('webrag_busy'));
+    try {
+      const r = await fetch(`/api/projects/${project.project_id}/web-rag`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: spec.title }),
+      });
+      if (r.ok) {
+        const data = await r.json();
+        project = data.project;
+        const nImg = data.web_rag?.downloaded_images?.length || 0;
+        const n3d = data.web_rag?.model_refs_3d?.length || 0;
+        renderAttachedRefs();
+        setStatus(lang === 'zh' ? `已联网检索 ${nImg} 张多视角参考图 + ${n3d} 个开源 3D 模型参考` : `Retrieved ${nImg} multi-view images + ${n3d} 3D model refs`);
+      }
+    } finally {
+      btn.disabled = false;
+    }
+  };
 
   card.querySelector('.js-refresh-2d').onclick = async (e) => {
     syncInputs();
@@ -893,6 +929,32 @@ function buildInline3DExportCard() {
           <div class="metric-box"><strong>${exp.estimated_flush_g ?? 0} g</strong><span>${t('m_flush')}</span></div>
           <div class="metric-box"><strong>${exp.estimated_print_minutes ? Math.round(exp.estimated_print_minutes) + ' min' : '-'}</strong><span>${t('m_time')}</span></div>
         </div>
+        ${d.physics ? `
+          <div class="physics-box">
+            <div class="physics-head">
+              <strong>${t('physics_title')}</strong>
+              <span class="score-pill ${d.physics.overall_verdict}">
+                🛡️ ${d.physics.stability_score}/100 · ${t(`verdict_${d.physics.overall_verdict}`)}
+              </span>
+            </div>
+            <div class="choice-hint">
+              ${d.physics.material_name} (E=${d.physics.youngs_modulus_gpa} GPa · σ_z=${d.physics.tensile_z_mpa} MPa · HDT ${d.physics.hdt_c}°C) · ${lang === 'zh' ? d.physics.load_scenario_zh : d.physics.load_scenario}
+            </div>
+            <div class="physics-kpis">
+              <div class="pkpi"><strong>${d.physics.tilt_angle_loaded_deg}°</strong><span>${t('pk_tilt')}</span></div>
+              <div class="pkpi"><strong>${d.physics.tipping_force_n} N</strong><span>${t('pk_ftip')}</span></div>
+              <div class="pkpi"><strong>${d.physics.safety_factor_z}×</strong><span>${t('pk_fos')}</span></div>
+              <div class="pkpi"><strong>${d.physics.base_closed_solid ? '✅ ' : '⚠️ '}${Math.round(d.physics.flat_bottom_area_mm2)} mm²</strong><span>${t('pk_base')}</span></div>
+            </div>
+            <div class="pcheck-list">
+              ${(d.physics.checks || []).map((pc) => `
+                <div class="pcheck ${pc.status}">
+                  <strong>${lang === 'zh' ? pc.name_zh : pc.name}</strong> (${pc.metric}) — ${pc.detail}
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        ` : ''}
         ${(d.split_parts || []).length > 1 ? `
           <div class="choice-section">
             <div class="choice-hint">${t('modules_title')}</div>

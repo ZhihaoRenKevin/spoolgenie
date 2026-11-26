@@ -13,9 +13,10 @@ import trimesh
 
 from spoolgenie.agent.designer import ConversationalDesigner
 from spoolgenie.config import SpoolGenieSettings, get_settings
-from spoolgenie.engines.cad_engine import build_parametric_model
+from spoolgenie.engines.cad_engine import build_parametric_model, execute_build123d_script
 from spoolgenie.engines.concept_2d import generate_2d_concept, render_3d_turntable_sheet
-from spoolgenie.engines.mesh_engine import generate_organic_mesh
+from spoolgenie.engines.mesh_engine import ensure_closed_flat_base, generate_organic_mesh
+from spoolgenie.engines.modular_cad_models import PRECISION_CAD_BUILDERS
 from spoolgenie.knowledge.kb import PrintKnowledgeBase
 from spoolgenie.llm.client import UnifiedLLMClient
 from spoolgenie.print_prep.bambu_3mf import (
@@ -30,6 +31,7 @@ from spoolgenie.print_prep.color_quantizer import (
 )
 from spoolgenie.print_prep.functional_carver import apply_functional_ops_modular
 from spoolgenie.print_prep.modularizer import decompose_mesh_into_solid_modules
+from spoolgenie.print_prep.physics_engine import evaluate_physics_stability
 from spoolgenie.print_prep.repair import (
     evaluate_dfm,
     repair_single_mesh,
@@ -47,6 +49,7 @@ from spoolgenie.reference.makerworld import (
     inspect_makerworld_url,
     search_makerworld,
 )
+from spoolgenie.reference.web_character_rag import retrieve_web_character_pack
 from spoolgenie.schemas import (
     ChatTurn,
     DesignSpec,
@@ -103,6 +106,25 @@ class SpoolGenieSession:
         self.state.references.append(ref)
         self.save()
         return ref
+
+    def enrich_from_web_rag(self, query: str | None = None, max_images: int = 4, max_3d_refs: int = 6) -> dict[str, Any]:
+        """Search live web for multi-view visual references & similar 3D-printable models (MakerWorld/Printables/Thingiverse)."""
+        q = (query or self.state.spec.title or "3d print").strip()
+        pack = retrieve_web_character_pack(
+            q,
+            save_dir=self.project_dir / "web_refs",
+            llm=self.llm,
+            max_images=max_images,
+            max_3d_refs=max_3d_refs,
+        )
+        existing_urls = {r.url for r in self.state.references if r.url}
+        for ref in pack.model_refs_3d[:4]:
+            if ref.url and ref.url not in existing_urls:
+                self.state.references.append(ref)
+                existing_urls.add(ref.url)
+        self.state.extra["web_rag"] = pack.to_dict()
+        self.save()
+        return pack.to_dict()
 
     def add_reference_file(self, src_path: str | Path) -> ReferenceAsset:
         src = Path(src_path)
@@ -231,8 +253,23 @@ class SpoolGenieSession:
         step_path: Path | None = None
         cad_script_path: Path | None = None
 
-        # 1. Generate Raw 3D Geometry via True General-Purpose Dual-Engine Router
-        if spec.route == EngineRoute.CAD:
+        # 1. Generate Raw 3D Geometry via Precision Mechanical CAD / General-Purpose Parametric CAD / High-Res Organic 3D Router
+        precision_builder = PRECISION_CAD_BUILDERS.get(spec.category)
+        if precision_builder is not None and not custom_cad_code and force_mesh_backend is None:
+            # Hard-surface mechanical character/robot (e.g. WALL-E): build studio-grade closed-tread modular build123d CAD!
+            step_file = self.project_dir / f"{self.state.project_id}.step"
+            cad_code = precision_builder(effective_spec_for_budget)
+            cad_parts = execute_build123d_script(cad_code, step_output_path=step_file)
+            self.state.cad_code = cad_code
+            self.state.extra["mesh_backend_used"] = "precision_modular_cad (build123d)"
+            cad_script_path = self.project_dir / f"{self.state.project_id}_cad.py"
+            cad_script_path.write_text(cad_code, encoding="utf-8")
+            step_path = step_file if step_file.exists() else None
+            for cp in cad_parts:
+                rep = repair_single_mesh(cp.mesh)
+                repaired_any = repaired_any or rep.repaired
+                raw_parts.append(PrintPart(name=cp.name, slot=cp.slot, mesh=rep.mesh))
+        elif spec.route == EngineRoute.CAD:
             step_file = self.project_dir / f"{self.state.project_id}.step"
             cad_res = build_parametric_model(
                 effective_spec_for_budget,
@@ -252,7 +289,7 @@ class SpoolGenieSession:
                 repaired_any = repaired_any or rep.repaired
                 raw_parts.append(PrintPart(name=cp.name, slot=cp.slot, mesh=rep.mesh))
         else:
-            # MESH or HYBRID: Start with the TRUE 360-degree 3D sculpted object/character from Hunyuan3D-2 / 3D engine!
+            # MESH or HYBRID: High-definition 360-degree 3D sculpted mesh + guaranteed closed flat bed contact!
             self.llm.release_vram()
             mesh_res = generate_organic_mesh(
                 effective_spec_for_budget, latest_concept_path, self.settings, force_backend=force_mesh_backend
@@ -266,9 +303,9 @@ class SpoolGenieSession:
                 target_h=spec.dimensions.height_mm,
                 preserve_aspect=True,
             )[0]
+            # Guarantee closed flat base on Z=0 so AI meshes never have open/floating bottom feet!
+            body_mesh = ensure_closed_flat_base(body_mesh)
 
-            # For HYBRID (e.g. WALL-E pen holder / Totoro phone dock / Iron Man MagSafe charger):
-            # Carve exact subtractive cavities AND emit additive functional attachments as SEPARATE colored solid modules!
             if spec.route == EngineRoute.HYBRID and spec.functional_ops:
                 body_mesh, extra_func_parts, ops_log = apply_functional_ops_modular(
                     body_mesh,
@@ -480,7 +517,7 @@ class SpoolGenieSession:
                 )
             )
 
-        # 6. Evaluate DFM Printability Report
+        # 6. Evaluate DFM Printability & Anisotropic FDM Structural Physics / Stability Report
         dfm = evaluate_dfm(
             [p.mesh for p in (split_plate_parts or assembled_parts)],
             spec=spec,
@@ -489,9 +526,11 @@ class SpoolGenieSession:
             effective_mode=effective_mode.value,
             joint_type_used=joint_used,
         )
+        physics_report = evaluate_physics_stability(assembled_parts, effective_spec_for_budget)
         dfm.coloring_method = coloring_method
         dfm.color_decisions = budget.decisions
         dfm.filament_recommendations = filament_recs
+        dfm.physics = physics_report
         dfm.split_parts = split_parts_info
 
         # 7. Headless Slicer or Physics-Based Estimate

@@ -1,0 +1,77 @@
+name: Release Desktop & Mobile Bundles
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            artifact_name: SpoolGenie-Windows-x64
+          - os: macos-latest
+            artifact_name: SpoolGenie-macOS-arm64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install SpoolGenie + Desktop packaging deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[desktop]"
+
+      - name: Build native Desktop bundle
+        run: python scripts/build_desktop.py
+
+      - name: Package Windows ZIP
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Compress-Archive -Path dist/SpoolGenie -DestinationPath ${{ matrix.artifact_name }}.zip
+
+      - name: Package macOS ZIP
+        if: runner.os == 'macOS'
+        run: |
+          cd dist
+          ditto -c -k --sequesterRsrc --keepParent "SpoolGenie.app" "../${{ matrix.artifact_name }}.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.artifact_name }}.zip
+
+  package-mobile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Archive Capacitor Mobile starter
+        run: zip -r SpoolGenie-Mobile-Capacitor.zip mobile/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SpoolGenie-Mobile-Capacitor
+          path: SpoolGenie-Mobile-Capacitor.zip
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build-desktop, package-mobile]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: release-assets/*.zip
+          generate_release_notes: true

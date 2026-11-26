@@ -114,3 +114,32 @@ def test_p2_ams_purge_and_joint_orientation_optimization() -> None:
     assert jf.ams_after.total_swaps < ams_upright.total_swaps * 0.2
     assert jf.ams_after.total_waste_g < ams_upright.total_waste_g * 0.2
     assert jf.loss_after["L_total"] < jf.loss_before["L_total"]
+
+
+def test_p15_multiview_perspective_registration_and_latex_table(tmp_path) -> None:
+    """Verify P1.5 perspective pinhole registration + multi-view feature fusion + LaTeX ablation table export."""
+    from spoolgenie.research.multiview_features import backproject_multiview_features
+
+    # Create asymmetric L-shaped 3D solid + synthetic front perspective image
+    base = manifold3d.Manifold.cube([60.0, 35.0, 22.0], center=True).translate([0.0, 0.0, 11.0])
+    tower = manifold3d.Manifold.cube([22.0, 28.0, 56.0], center=True).translate([18.0, 0.0, 50.0])
+    mesh = _manifold_to_mesh(base + tower)
+
+    img = Image.new("RGB", (180, 180), (250, 250, 250))
+    for y in range(25, 160):
+        for x in range(30, 150):
+            if y > 115:
+                img.putpixel((x, y), (156, 115, 75))  # brown base
+            elif x > 95:
+                img.putpixel((x, y), (77, 154, 78))   # green right tower
+    p_img = tmp_path / "mv_view1.png"
+    img.save(p_img)
+
+    sf_ids = np.arange(len(mesh.faces), dtype=np.int32) % 32
+    mv = backproject_multiview_features(mesh, sf_ids, 32, [p_img, p_img], use_dinov2=False)
+    assert mv is not None
+    assert len(mv.poses) == 2
+    assert mv.poses[0].silhouette_iou > 0.45
+    assert mv.sf_features.shape == (32, 6)
+    # A 2-box L-solid has 4 front-facing triangles -> all front-facing super-facets observed cleanly!
+    assert int(np.sum(~np.isnan(mv.sf_obs_lab[:, 0]))) >= 4

@@ -50,11 +50,13 @@ class FabGraphCutConfig:
     lambda_stress: float = 0.65    # Penalize seams across high-bending-stress Z necks
     lambda_z_swap: float = 0.70    # Anisotropic AMS Z-swap penalty (prefers clean low-swap transitions!)
     sigma_dihedral_rad: float = 0.55
+    sigma_sem_feat: float = 0.45   # Multi-view DINOv2/chromatic semantic boundary sensitivity
     inlay_depth_mm: float = 3.8
     outset_mm: float = 1.6
     min_region_area_ratio: float = 0.025
     max_expansion_sweeps: int = 5
     volumetric_grid_res: int = 44  # Smooth 3D implicit RBF level-set grid resolution for marching cubes
+    use_dinov2: bool = False       # Optional CUDA DINOv2 dense ViT features (default fast multiscale Lab)
     seed: int = 42
 
 
@@ -625,9 +627,14 @@ def decompose_mesh_fab_graphcut(
     filaments: list[FilamentSlot],
     base_name: str = "model",
     reference_image_path: str | Path | None = None,
+    reference_image_paths: list[str | Path] | None = None,
     config: FabGraphCutConfig | None = None,
 ) -> FabGraphCutResult:
-    """Run Fabrication-Aware Multi-Label 3D MRF Graph-Cut + watertight curved solid decomposition."""
+    """Run Fabrication-Aware Multi-Label 3D MRF Graph-Cut + smooth RBF implicit volumetric partitioning.
+
+    Supports 1..N perspective-calibrated reference images via `multiview_features.backproject_multiview_features`
+    with optional DINOv2 dense semantic feature boundaries + shadow-aware dark-slot protection!
+    """
     cfg = config or FabGraphCutConfig()
     if len(filaments) <= 1 or len(mesh.faces) < 20:
         slot1 = filaments[0].slot if filaments else 1
@@ -705,14 +712,33 @@ def decompose_mesh_fab_graphcut(
                     acc[0] += float(elen)
                     acc[1] += float(elen * ang)
 
+    # 2.5 P1.5 Multi-View Perspective-Calibrated Back-Projection (1..N views, optional DINOv2!)
+    all_ref_imgs: list[str | Path] = list(reference_image_paths or [])
+    if reference_image_path and Path(reference_image_path) not in [Path(p) for p in all_ref_imgs]:
+        all_ref_imgs.insert(0, reference_image_path)
+
+    from spoolgenie.research.multiview_features import backproject_multiview_features
+
+    mv_res = (
+        backproject_multiview_features(work_mesh, sf_ids, n_sf, all_ref_imgs, use_dinov2=cfg.use_dinov2)
+        if all_ref_imgs
+        else None
+    )
+
     mrf_edges: list[tuple[int, int, float]] = []
     scale_len = max(span * 0.04, 1.0)
     for (u, v), (tot_len, sum_len_ang) in edge_accum.items():
         mean_dih = sum_len_ang / max(tot_len, 1e-6)
         len_norm = tot_len / scale_len
 
-        # Term 1: Dihedral-crease aligned smoothness (cheap to cut along sharp concave/convex creases!)
-        w_geom = cfg.lambda_geom * len_norm * float(np.exp(-(mean_dih**2) / (2.0 * cfg.sigma_dihedral_rad**2)))
+        # Term 1: Dihedral-crease + Multi-View Semantic Feature Edge Alignment!
+        # Cheap to cut along 3D creases OR sharp DINOv2/chromatic semantic boundaries!
+        geom_aff = float(np.exp(-(mean_dih**2) / (2.0 * cfg.sigma_dihedral_rad**2)))
+        sem_aff = 1.0
+        if mv_res is not None and mv_res.sf_confidence[u] > 1e-5 and mv_res.sf_confidence[v] > 1e-5:
+            feat_diff = float(np.linalg.norm(mv_res.sf_features[u] - mv_res.sf_features[v]))
+            sem_aff = float(np.exp(-(feat_diff**2) / (2.0 * cfg.sigma_sem_feat**2)))
+        w_geom = cfg.lambda_geom * len_norm * (0.45 * geom_aff + 0.55 * sem_aff)
 
         # Term 2: Bending-stress neck avoidance (penalize cuts at weakest Z bending neck!)
         z_mid = 0.5 * (sf_centers[u, 2] + sf_centers[v, 2])
@@ -722,22 +748,66 @@ def decompose_mesh_fab_graphcut(
         # Term 3: Anisotropic AMS Z-swap penalty (vertical seams spanning many Z layers cost more swaps!)
         dp = sf_centers[u] - sf_centers[v]
         dp_len = max(float(np.linalg.norm(dp)), 1e-6)
-        horiz_ratio = 1.0 - abs(float(dp[2])) / dp_len  # 1.0 if side-by-side (vertical seam), 0.0 if stacked (horizontal seam)
+        horiz_ratio = 1.0 - abs(float(dp[2])) / dp_len
         w_z = cfg.lambda_z_swap * len_norm * (horiz_ratio**2)
 
         w_tot = w_geom + w_stress + w_z
         if w_tot > 1e-6:
             mrf_edges.append((u, v, w_tot))
 
-    # 3. Compute silhouette-aligned unary visual + semantic costs, apply bilateral symmetry transfer if symmetric,
-    #    and solve exact multi-label alpha-expansion MRF!
-    ctx_2d = _prepare_2d_context(reference_image_path, work_mesh)
-    unary, obs_labs, (cam_yaw, cam_elev) = _sample_superfacet_unary_costs(work_mesh, sf_ids, n_sf, filaments, ctx_2d)
+    # 3. Compute shadow-aware unary visual + semantic costs from multi-view perspective fusion!
+    ctx_2d = _prepare_2d_context(reference_image_path, work_mesh) if mv_res is None else None
+    if mv_res is not None:
+        k_num = len(filaments)
+        unary = np.full((n_sf, k_num), 4.0, dtype=np.float64)
+        obs_labs = mv_res.sf_obs_lab
+        fl_labs = [_rgb_to_lab_batch(_hex_to_rgb_array(fl.hex_color)) for fl in filaments]
+        fl_is_dark_neutral = [
+            (float(fl_labs[k][0]) < 32.0 and float(np.hypot(fl_labs[k][1], fl_labs[k][2])) < 14.0)
+            for k in range(k_num)
+        ]
+        role_z_pref = np.zeros((k_num, 3), dtype=np.float64)
+        for idx, fl in enumerate(filaments):
+            txt = f"{fl.role} {fl.name}".lower()
+            if any(w in txt for w in ("base", "tread", "boot", "feet", "shoe", "pot", "plinth", "pants", "shorts")):
+                role_z_pref[idx, 0] = 1.6
+            if any(w in txt for w in ("body", "torso", "suit", "armor", "fur", "coat", "main", "shell")):
+                role_z_pref[idx, 1] = 1.4
+            if any(w in txt for w in ("head", "faceplate", "helmet", "crown", "hat", "tangerine", "leaf", "eye", "visor")):
+                role_z_pref[idx, 2] = 1.8
+
+        avg_sf_area = max(float(fa.sum()) / max(n_sf, 1), 1.0)
+        ext = np.maximum(bmax - bmin, 1e-3)
+        for u in range(n_sf):
+            area_scale = float(np.clip(sf_areas[u] / avg_sf_area, 0.35, 3.0))
+            z_rel = float((sf_centers[u, 2] - bmin[2]) / ext[2])
+            z_band = 0 if z_rel < 0.28 else (2 if z_rel > 0.68 else 1)
+            if not np.isnan(obs_labs[u, 0]):
+                lab_u = obs_labs[u]
+                chroma_u = float(np.hypot(lab_u[1], lab_u[2]))
+                dists = np.array([_shading_tolerant_lab_dist(lab_u, fl_labs[k]) for k in range(k_num)], dtype=np.float64)
+                # Shadow-aware guard: prevent chromatic surfaces in studio self-shadow (chroma > 13)
+                # from being misclassified into neutral Basic Black / Matte Charcoal!
+                if chroma_u > 13.0:
+                    for k in range(k_num):
+                        if fl_is_dark_neutral[k]:
+                            dists[k] += 18.0
+                unary[u] = (dists / 5.0) * area_scale - role_z_pref[:, z_band] * 0.35 * area_scale
+            else:
+                base_cost = np.full(k_num, 1.4, dtype=np.float64)
+                base_cost[0] = 0.0
+                base_cost -= role_z_pref[:, z_band] * 0.25
+                unary[u] = base_cost * area_scale * 0.65
+        unary -= unary.min(axis=1, keepdims=True)
+        cam_yaw = mv_res.poses[0].yaw_deg
+        cam_elev = mv_res.poses[0].elev_deg
+    else:
+        unary, obs_labs, (cam_yaw, cam_elev) = _sample_superfacet_unary_costs(work_mesh, sf_ids, n_sf, filaments, ctx_2d)
 
     # Bilateral symmetry completion: for symmetric characters (e.g. Iron Man from a 3/4 view), share visible
     # front-side visual evidence cleanly across the X=cx mirror plane so left & right cheeks/ears match symmetrically!
     is_sym = _is_mesh_bilaterally_symmetric_x(work_mesh)
-    if is_sym and ctx_2d is not None:
+    if is_sym and (mv_res is not None or ctx_2d is not None):
         from scipy.spatial import cKDTree
 
         cx_m = 0.5 * float(bmin[0] + bmax[0])

@@ -1,17 +1,26 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="dark">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <meta name="theme-color" content="#121824" />
+  <meta name="theme-color" id="metaThemeColor" content="#0a0b1a" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="SpoolGenie" />
   <link rel="manifest" href="/manifest.json" />
   <link rel="icon" href="/icon.svg" type="image/svg+xml" />
   <link rel="apple-touch-icon" href="/icon.svg" />
-  <title>SpoolGenie — Conversational 2D → 3D → Bambu AMS 3MF</title>
-  <link rel="stylesheet" href="/static/styles.css?v=7" />
+  <title>SpoolGenie — 线盘神灯 · Wish on a Spool, Print in Reality</title>
+  <link rel="stylesheet" href="/static/styles.css?v=10" />
+  <script>
+    (function () {
+      const saved = localStorage.getItem('sg_theme');
+      const theme = saved || 'dark';
+      document.documentElement.setAttribute('data-theme', theme);
+      const m = document.getElementById('metaThemeColor');
+      if (m) m.setAttribute('content', theme === 'dark' ? '#0a0b1a' : '#faf6ee');
+    })();
+  </script>
   <script type="importmap">
     {
       "imports": {
@@ -22,277 +31,107 @@
   </script>
 </head>
 <body>
-  <!-- TOP STUDIO BAR -->
+  <!-- AMBIENT MAGICAL AURORA & STARDUST BACKDROP -->
+  <div class="magic-backdrop" aria-hidden="true">
+    <div class="aurora aurora-gold"></div>
+    <div class="aurora aurora-violet"></div>
+    <div class="aurora aurora-teal"></div>
+    <div class="stardust"></div>
+  </div>
+  <div id="sparkleLayer" class="sparkle-layer" aria-hidden="true"></div>
+
+  <!-- MINIMAL MAGICAL TOPBAR -->
   <header class="topbar">
-    <div class="brand-wrap">
-      <div class="logo-mark">
-        <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-          <circle cx="10.5" cy="13.5" r="7"/>
-          <circle cx="10.5" cy="13.5" r="2.3"/>
-          <path d="M16.2 8.5 C18.5 6.8 18.8 5.1 17.6 3.8"/>
-          <path d="M18.2 1.8 L19.1 4.2 L21.5 5.1 L19.1 6 L18.2 8.4 L17.3 6 L14.9 5.1 L17.3 4.2 Z" fill="#fff7d6" stroke="none"/>
-        </svg>
+    <div class="top-left">
+      <div class="brand-wrap">
+        <div class="logo-mark">
+          <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <circle cx="10.5" cy="13.5" r="7"/>
+            <circle cx="10.5" cy="13.5" r="2.3"/>
+            <path d="M16.2 8.5 C18.5 6.8 18.8 5.1 17.6 3.8"/>
+            <path d="M18.2 1.8 L19.1 4.2 L21.5 5.1 L19.1 6 L18.2 8.4 L17.3 6 L14.9 5.1 L17.3 4.2 Z" fill="#fff7d6" stroke="none"/>
+          </svg>
+        </div>
+        <div class="brand-text">
+          <div class="brand-name">SpoolGenie <span class="ver-tag" data-i18n="brand_tag">线盘神灯</span></div>
+        </div>
       </div>
-      <div>
-        <div class="brand-name">SpoolGenie <span class="ver-tag" data-i18n="brand_tag">线盘神灯</span></div>
-        <div class="brand-sub" data-i18n="brand_sub">线盘神灯 · 对话许愿 → 2D 确认 → 真 3D 与拓竹 AMS / 免胶水 .3MF</div>
-      </div>
+
+      <select id="projectSwitcher" class="project-select" title="Switch wish project"></select>
+      <button id="newProjectBtn" class="icon-pill pill-gold" data-i18n="new_btn" title="Start a new wish">✨ 新许愿</button>
     </div>
 
-    <!-- 4-STEP INTERACTIVE STEPPER -->
-    <nav class="stepper" aria-label="Workflow steps">
-      <div class="step active" data-step="ideation"><span class="step-num">1</span><span data-i18n="step1">参考与对话</span></div>
-      <div class="step-line"></div>
-      <div class="step" data-step="concept_review"><span class="step-num">2</span><span data-i18n="step2">2D 确认颜色尺寸</span></div>
-      <div class="step-line"></div>
-      <div class="step" data-step="model_ready"><span class="step-num">3</span><span data-i18n="step3">3D 预览与拆件</span></div>
-      <div class="step-line"></div>
-      <div class="step" data-step="exported"><span class="step-num">4</span><span data-i18n="step4">导出 .3MF 打印</span></div>
-    </nav>
-
-    <div class="topbar-actions">
-      <select id="projectSwitcher" class="project-select" title="Switch project"></select>
-      <button id="newProjectBtn" class="btn btn-secondary" data-i18n="new_btn">+ 新建</button>
-      <button id="mobilePairBtn" class="btn btn-secondary" data-i18n="mobile_btn" title="Connect iPhone / Android via QR code">📱 手机</button>
-      <button id="toggleInspectorBtn" class="btn btn-secondary" data-i18n="inspector_btn" title="Show/hide right settings panel">⚙️ 参数</button>
-      <button id="langToggleBtn" class="btn btn-secondary" title="Switch language / 切换中英文">EN / 中文</button>
-      <span id="hwBadge" class="hw-pill">检测硬件中…</span>
+    <div class="top-right">
+      <button id="openMwDrawerBtn" class="icon-pill" data-i18n="mw_btn" title="Search MakerWorld">🔎 MakerWorld</button>
+      <button id="mobilePairBtn" class="icon-pill" data-i18n="mobile_btn" title="Connect phone via QR">📱 手机</button>
+      <button id="themeToggleBtn" class="icon-pill" title="Toggle Midnight / Sunlit theme">☀️ 晨光浅色</button>
+      <button id="langToggleBtn" class="icon-pill" title="Switch language / 切换中英文">EN</button>
+      <span id="hwBadge" class="hw-pill">…</span>
     </div>
   </header>
 
-  <!-- 3-PANE STUDIO WORKSPACE -->
-  <main class="workspace">
-    <!-- LEFT PANE: CONVERSATIONAL DESIGNER + MAKERWORLD REFERENCE SEARCH -->
-    <aside class="pane pane-left">
-      <div class="left-tabs left-tabs-2">
-        <button class="left-tab active" data-panel="chat" data-i18n="tab_chat">💬 对话设计</button>
-        <button class="left-tab" data-panel="makerworld" data-i18n="tab_mw">🔎 MakerWorld 搜索</button>
-      </div>
+  <!-- CHAT-FIRST CENTERED WISH SANCTUARY -->
+  <main class="chat-shell">
+    <div id="chatScroll" class="chat-scroll">
+      <div id="chatStream" class="chat-stream"></div>
+    </div>
 
-      <!-- PANEL 1: CHAT -->
-      <div id="panel-chat" class="left-panel active">
-        <div class="quick-bar">
-          <div class="micro-label" data-i18n="quick_label">快捷示例：</div>
-          <div id="quickChips" class="quick-chips"></div>
-        </div>
-
-        <div id="chatLog" class="chat-log"></div>
-
-        <form id="chatForm" class="composer">
-          <textarea id="chatInput" rows="2" placeholder="输入想法、尺寸(mm)、配色、AMS台数或免胶水要求… (Enter 发送，支持 Ctrl+V 贴图)"></textarea>
-          <div class="composer-foot">
-            <label class="attach-btn" title="Upload reference image / STL / 3MF">
+    <!-- FLOATING ENCHANTED COMPOSER BAR -->
+    <div class="composer-dock">
+      <div id="attachedStrip" class="attached-strip hidden"></div>
+      <form id="chatForm" class="composer-box">
+        <textarea
+          id="chatInput"
+          rows="1"
+          placeholder="对着神灯说出你的 3D 打印愿望…（Enter 许愿，支持 Ctrl+V 粘贴参考图）"
+        ></textarea>
+        <div class="composer-actions">
+          <div class="composer-left-tools">
+            <label class="tool-chip" title="Upload reference image / STL / 3MF">
               <span data-i18n="attach_ref">📎 参考图/STL</span>
               <input id="refUpload" type="file" accept=".png,.jpg,.jpeg,.webp,.stl,.3mf,.glb,.obj" hidden />
             </label>
-            <label class="auto2d-toggle" title="Auto-generate 2D concept image after each reply">
+            <button id="composerMwBtn" type="button" class="tool-chip" data-i18n="mw_chip">🔎 找 MakerWorld 灵感</button>
+            <label class="auto2d-check" title="Automatically conjure 2D vision after replying">
               <input id="auto2dCheck" type="checkbox" checked />
-              <span data-i18n="auto_2d">自动画2D</span>
+              <span data-i18n="auto_2d">自动显化 2D 幻象</span>
             </label>
-            <span id="refCount" class="muted">0</span>
-            <button id="sendBtn" type="submit" class="btn btn-primary" data-i18n="send_btn">发送 ↵</button>
           </div>
-        </form>
-      </div>
+          <div class="composer-right-tools">
+            <span id="statusInline" class="status-inline"></span>
+            <button id="sendBtn" type="submit" class="btn btn-magic" data-i18n="send_btn">✨ 许下愿望</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </main>
 
-      <!-- PANEL 2: MAKERWORLD SEARCH & URL IMPORT -->
-      <div id="panel-makerworld" class="left-panel">
-        <div class="panel-note" data-i18n="mw_note">直接搜索 MakerWorld 公开模型并一键引用，或粘贴模型链接 / Ctrl+V 粘贴截图提取结构与色盘。</div>
+  <!-- SLIDE-OVER MAKERWORLD SEARCH DRAWER -->
+  <div id="mwDrawerBackdrop" class="drawer-backdrop hidden">
+    <aside class="drawer-panel" role="dialog" aria-modal="true" aria-label="MakerWorld Search">
+      <div class="drawer-head">
+        <strong data-i18n="mw_drawer_title">🔎 MakerWorld 灵感宝库搜索</strong>
+        <button id="closeMwDrawerBtn" type="button" class="modal-close" aria-label="Close">×</button>
+      </div>
+      <div class="drawer-body">
+        <div class="panel-note" data-i18n="mw_note">搜索公开 MakerWorld 模型并一键带入许愿对话，或粘贴模型链接提取结构与色盘。</div>
         <div class="row">
           <input id="mwQuery" type="text" placeholder="搜索 MakerWorld（如 wall-e, gridfinity, headphone stand…）" />
-          <button id="mwSearchBtn" type="button" class="btn btn-primary" data-i18n="search_btn">搜索</button>
+          <button id="mwSearchBtn" type="button" class="btn btn-magic" data-i18n="search_btn">搜索</button>
         </div>
-        <div id="mwQuickTags" class="quick-chips"></div>
-        <div id="mwResults" class="mw-results mw-results-tall"></div>
+        <div id="mwQuickTags" class="chip-row"></div>
+        <div id="mwResults" class="mw-results"></div>
         <div class="divider"></div>
-        <div class="micro-label" data-i18n="mw_url_label">粘贴指定 MakerWorld 模型链接</div>
-        <div class="row mt-4">
+        <div class="micro-label" data-i18n="mw_url_label">粘贴 MakerWorld 模型链接</div>
+        <div class="row">
           <input id="mwUrlInput" type="text" placeholder="https://makerworld.com/en/models/..." />
           <button id="mwUrlBtn" type="button" class="btn btn-secondary" data-i18n="import_btn">导入</button>
         </div>
-        <div class="micro-label mt-8" data-i18n="attached_label">当前已绑定参考素材</div>
-        <div id="attachedRefs" class="mw-results"></div>
+        <div class="micro-label" data-i18n="attached_label">当前已施法绑定参考</div>
+        <div id="attachedRefsDrawer" class="mw-attached"></div>
       </div>
     </aside>
-
-    <!-- CENTER PANE: IMMERSIVE 2D CONFIRMATION GATE + INTERACTIVE THREE.JS 3D STUDIO -->
-    <section class="pane-center">
-      <div class="canvas-header">
-        <div class="view-pills">
-          <button class="vpill active" data-view="2d" data-i18n="view_2d">🎨 2D 概念图</button>
-          <button class="vpill" data-view="3d" data-i18n="view_3d">🧊 3D 交互模型</button>
-          <button class="vpill" data-view="split" data-i18n="view_split">🧩 无 AMS 分块排盘</button>
-          <button class="vpill" data-view="turntable" data-i18n="view_tt">📐 四视角验收图</button>
-        </div>
-
-        <button id="confirmBuildBtn" class="btn btn-accent btn-glow" data-i18n="confirm_btn">
-          ⚡ 确认方案并生成 3D 打印文件
-        </button>
-      </div>
-
-      <div class="stage-frame">
-        <!-- LOADING OVERLAY -->
-        <div id="busyOverlay" class="busy-overlay hidden">
-          <div class="spinner"></div>
-          <div id="busyTitle" class="busy-title">正在生成…</div>
-          <div id="busySub" class="busy-sub">RTX 5090 本地推理中，请稍候</div>
-        </div>
-
-        <!-- VIEW: 2D CONCEPT -->
-        <div id="view2d" class="stage-view active">
-          <div id="conceptPlaceholder" class="empty-hero">
-            <div class="empty-icon">🧊</div>
-            <h3 data-i18n="empty_2d_title">从一句话开始，直接出可打印的 .3MF</h3>
-            <p data-i18n="empty_2d_desc">左侧描述你想做的角色或功能件（或点击顶部切换已生成的瓦力笔筒 / 无AMS耳机架），先确认 2D 效果图与颜色尺寸，再一键生成水密 3D 模型。</p>
-          </div>
-          <img id="conceptImg" class="stage-img hidden" alt="2D Concept Render" />
-          <div id="conceptCaption" class="stage-footer"></div>
-        </div>
-
-        <!-- VIEW: THREE.JS 3D INTERACTIVE -->
-        <div id="view3d" class="stage-view">
-          <div id="threeContainer" class="three-canvas"></div>
-          <!-- Floating Camera Toolbar -->
-          <div class="cam-toolbar">
-            <button class="cam-btn" data-cam="iso" data-i18n="cam_iso">3/4 视角</button>
-            <button class="cam-btn" data-cam="front" data-i18n="cam_front">正面</button>
-            <button class="cam-btn" data-cam="side" data-i18n="cam_side">侧面</button>
-            <button class="cam-btn" data-cam="top" data-i18n="cam_top">俯视</button>
-            <button class="cam-btn" id="wireframeBtn" data-i18n="cam_wire">线框</button>
-            <button class="cam-btn active" id="spinBtn" data-i18n="cam_spin">旋转</button>
-          </div>
-          <!-- Floating Live Metric HUD -->
-          <div id="threeHud" class="three-hud">
-            <span id="hudDims">-</span>
-            <span class="sep">·</span>
-            <span id="hudWatertight">-</span>
-            <span class="sep">·</span>
-            <span id="hudMode">-</span>
-          </div>
-        </div>
-
-        <!-- VIEW: 4-ANGLE TURNTABLE IMAGE -->
-        <div id="viewTurntable" class="stage-view">
-          <div id="turntablePlaceholder" class="empty-hero">
-            <div class="empty-icon">📐</div>
-            <h3 data-i18n="empty_tt_title">四视角 3D 验收图</h3>
-            <p data-i18n="empty_tt_desc">点击右上角确认并生成 3D 后，这里会自动展示 3/4、正面、侧面、背面四视角成品实色图。</p>
-          </div>
-          <img id="turntableImg" class="stage-img hidden" alt="3D Turntable Sheet" />
-          <div id="turntableCaption" class="stage-footer"></div>
-        </div>
-      </div>
-
-      <div class="bottom-strip">
-        <span id="statusBar">就绪</span>
-        <span id="projectIdTag" class="mono muted"></span>
-      </div>
-    </section>
-
-    <!-- RIGHT PANE: BAMBU HARDWARE / AMS BUDGET / GLUE-FREE JOINTS / DFM / EXPORTS -->
-    <aside class="pane pane-right">
-      <!-- PRINTER & AMS COUNT -->
-      <div class="card">
-        <div class="card-head">
-          <span data-i18n="card_hw">🖨️ 打印机与 AMS 颜色预算</span>
-          <span id="colorCapBadge" class="tag-green">≤ 4 色</span>
-        </div>
-
-        <label><span data-i18n="printer_label">目标机型</span>
-          <select id="printerSelect"></select>
-        </label>
-
-        <div class="micro-label mt-8" data-i18n="ams_label">你的 AMS 台数（决定最终颜色取舍上限）</div>
-        <div id="amsPills" class="pill-grid-5">
-          <button type="button" class="ams-pill" data-ams="0"><strong data-i18n="ams0_t">0 台</strong><span data-i18n="ams0_s">无AMS</span></button>
-          <button type="button" class="ams-pill active" data-ams="1"><strong data-i18n="ams1_t">1 台</strong><span data-i18n="ams1_s">≤4色</span></button>
-          <button type="button" class="ams-pill" data-ams="2"><strong data-i18n="ams2_t">2 台</strong><span data-i18n="ams2_s">≤8色</span></button>
-          <button type="button" class="ams-pill" data-ams="3"><strong data-i18n="ams3_t">3 台</strong><span data-i18n="ams3_s">≤12色</span></button>
-          <button type="button" class="ams-pill" data-ams="4"><strong data-i18n="ams4_t">4 台</strong><span data-i18n="ams4_s">≤16色</span></button>
-        </div>
-
-        <div class="grid-2 mt-8">
-          <label><span data-i18n="mode_label">多色策略</span>
-            <select id="multicolorModeSelect">
-              <option value="auto" data-i18n="mode_auto" selected>自动匹配</option>
-              <option value="ams" data-i18n="mode_ams">AMS 同盘换色</option>
-              <option value="split_no_ams" data-i18n="mode_split">无AMS分块 (0废料)</option>
-              <option value="monochrome" data-i18n="mode_mono">合并单色</option>
-            </select>
-          </label>
-          <label><span data-i18n="joint_label">免胶水机械连接</span>
-            <select id="jointTypeSelect">
-              <option value="dovetail" data-i18n="joint_dt" selected>燕尾槽 (最稳抗拔)</option>
-              <option value="snap_pin" data-i18n="joint_sp">弹性开槽卡扣销</option>
-              <option value="press_tenon" data-i18n="joint_pt">紧配榫卯</option>
-              <option value="none" data-i18n="joint_none">不加连接器</option>
-            </select>
-          </label>
-        </div>
-      </div>
-
-      <!-- DIMENSIONS & FILAMENT SPOOLS -->
-      <div class="card">
-        <div class="card-head">
-          <span data-i18n="card_dims">📏 尺寸 (mm) 与耗材色盘</span>
-          <button id="addColorBtn" class="btn-link" data-i18n="add_color">+ 加一色</button>
-        </div>
-        <div class="grid-3">
-          <label><span data-i18n="dim_w">宽 W</span><input id="dimW" type="number" min="10" max="400" step="1" value="105" /></label>
-          <label><span data-i18n="dim_d">深 D</span><input id="dimD" type="number" min="10" max="400" step="1" value="95" /></label>
-          <label><span data-i18n="dim_h">高 H</span><input id="dimH" type="number" min="4" max="400" step="1" value="120" /></label>
-        </div>
-
-        <div id="filamentList" class="filament-list mt-8"></div>
-
-        <div class="micro-label mt-8" data-i18n="swatch_label">拓竹 PLA 常用色板（点击添加到最后槽位）</div>
-        <div id="bambuSwatches" class="swatch-strip"></div>
-
-        <button id="applySpecBtn" class="btn btn-secondary full mt-8" data-i18n="apply_spec">应用修改并刷新 2D 预览</button>
-      </div>
-
-      <!-- DFM & COLOR DECISIONS -->
-      <div class="card">
-        <div class="card-head">
-          <span data-i18n="card_dfm">🛡️ 打印体检 (DFM) 与颜色取舍</span>
-        </div>
-        <div id="dfmMetrics" class="metric-row hidden">
-          <div class="metric"><strong id="mMass">-</strong><span data-i18n="m_mass">耗材</span></div>
-          <div class="metric"><strong id="mFlush">-</strong><span data-i18n="m_flush">冲刷废料</span></div>
-          <div class="metric"><strong id="mTime">-</strong><span data-i18n="m_time">预估耗时</span></div>
-        </div>
-        <div id="dfmSummary" class="dfm-box muted" data-i18n="dfm_empty">生成 3D 后显示水密性、悬垂检查、AMS 合并日志与分块清单。</div>
-      </div>
-
-      <!-- EXPORTS -->
-      <div class="card">
-        <div class="card-head">
-          <span data-i18n="card_export">📦 导出 3D 打印文件</span>
-        </div>
-        <div id="exportLinks" class="export-links muted" data-i18n="export_empty">等待确认方案并生成…</div>
-      </div>
-    </aside>
-  </main>
-
-  <!-- MOBILE BOTTOM TAB NAVIGATION (shown on phones / <= 768px) -->
-  <nav id="mobileNav" class="mobile-nav" aria-label="Mobile Navigation">
-    <button type="button" class="mnav-btn active" data-mtab="chat">
-      <span class="mnav-ico">💬</span>
-      <span data-i18n="mnav_chat">对话</span>
-    </button>
-    <button type="button" class="mnav-btn" data-mtab="canvas">
-      <span class="mnav-ico">🎨</span>
-      <span data-i18n="mnav_canvas">2D / 3D</span>
-    </button>
-    <button type="button" class="mnav-btn" data-mtab="makerworld">
-      <span class="mnav-ico">🔎</span>
-      <span data-i18n="mnav_mw">搜索</span>
-    </button>
-    <button type="button" class="mnav-btn" data-mtab="specs">
-      <span class="mnav-ico">⚙️</span>
-      <span data-i18n="mnav_specs">参数导出</span>
-    </button>
-  </nav>
+  </div>
 
   <!-- MOBILE / LAN QR PAIRING MODAL -->
   <div id="mobileModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="mobileModalTitle">
@@ -304,19 +143,28 @@
       <div class="modal-body">
         <div id="lanStatusPill" class="lan-pill">检测局域网状态…</div>
         <div id="lanQrBox" class="qr-box"></div>
-        <div class="lan-url-row">
-          <input id="lanUrlInput" type="text" readonly />
-          <button id="copyLanUrlBtn" type="button" class="btn btn-primary" data-i18n="copy_btn">复制</button>
+        <div class="row">
+          <input id="lanUrlInput" type="text" readonly class="mono" />
+          <button id="copyLanUrlBtn" type="button" class="btn btn-magic" data-i18n="copy_btn">复制</button>
         </div>
         <div id="lanHintBox" class="panel-note"></div>
         <div class="mobile-guide">
-          <div class="guide-item"><strong data-i18n="guide_ios_t">🍎 iOS (iPhone / iPad):</strong> <span data-i18n="guide_ios_d">Safari 扫码打开 → 点底部分享图标 →「添加到主屏幕」，即可全屏 App 运行（或使用仓库 mobile/ 编译原生 Capacitor App）。</span></div>
-          <div class="guide-item"><strong data-i18n="guide_and_t">🤖 Android:</strong> <span data-i18n="guide_and_d">Chrome 扫码打开 → 点右上菜单「安装应用 / 添加到主屏幕」，或使用 mobile/ 打包原生 APK。</span></div>
+          <div><strong data-i18n="guide_ios_t">🍎 iOS:</strong> <span data-i18n="guide_ios_d">Safari 扫码打开 → 分享 →「添加到主屏幕」，全屏运行。</span></div>
+          <div><strong data-i18n="guide_and_t">🤖 Android:</strong> <span data-i18n="guide_and_d">Chrome 扫码打开 → 菜单 →「安装应用 / 添加到主屏幕」。</span></div>
         </div>
       </div>
     </div>
   </div>
 
-  <script type="module" src="/static/app.js?v=7"></script>
+  <!-- LIGHTBOX MODAL -->
+  <div id="lightboxModal" class="modal-backdrop hidden" role="dialog" aria-modal="true">
+    <div class="lightbox-inner">
+      <button id="closeLightboxBtn" type="button" class="lightbox-close" aria-label="Close">×</button>
+      <img id="lightboxImg" src="" alt="Preview" />
+      <div id="lightboxCap" class="lightbox-cap"></div>
+    </div>
+  </div>
+
+  <script type="module" src="/static/app.js?v=10"></script>
 </body>
 </html>

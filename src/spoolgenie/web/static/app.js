@@ -4,131 +4,210 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
 let project = null;
 let meta = null;
-let activeView = '2d';
+let lang = localStorage.getItem('sg_lang') || ((navigator.language || '').toLowerCase().startsWith('zh') ? 'zh' : 'en');
+let theme = document.documentElement.getAttribute('data-theme') || 'dark';
+let isSendingChat = false;
+let isRendering2D = false;
+let isBuilding3D = false;
+let runSlicerPref = true;
+let active3DTab = '3d';
 let autoSpin = true;
 let wireframeOn = false;
-let lang = localStorage.getItem('pf_lang') || ((navigator.language || '').toLowerCase().startsWith('zh') ? 'zh' : 'en');
+let lampRubCount = 0;
+
+let threeCtx = null;
+const gltfLoader = new GLTFLoader();
+
+const $ = (id) => document.getElementById(id);
 
 const I18N = {
   zh: {
     brand_tag: '线盘神灯',
-    brand_sub: '线盘神灯 · 对话许愿 → 2D 确认 → 真 3D 与拓竹 AMS / 免胶水 .3MF',
-    step1: '参考与对话', step2: '2D 确认颜色尺寸', step3: '3D 预览与拆件', step4: '导出 .3MF 打印',
-    new_btn: '+ 新建', mobile_btn: '📱 手机', inspector_btn: '⚙️ 参数', lang_btn: 'EN',
-    mnav_chat: '对话', mnav_canvas: '2D / 3D', mnav_mw: '搜索', mnav_specs: '参数导出',
+    new_btn: '✨ 新许愿',
+    mw_btn: '🔎 MakerWorld',
+    mobile_btn: '📱 手机',
+    theme_to_dark: '🌙 星夜深色',
+    theme_to_light: '☀️ 晨光浅色',
+    lang_btn: 'EN',
+    chat_ph: '对着神灯说出你的 3D 打印愿望…（Enter 许愿，支持 Ctrl+V 粘贴参考图）',
+    attach_ref: '📎 参考图/STL',
+    mw_chip: '🔎 MakerWorld 灵感',
+    auto_2d: '自动显化 2D 幻象',
+    send_btn: '✨ 许下愿望',
+    lamp_whisper_idle: '✨ 轻点擦拭线盘神灯 · 唤醒 3D 具现魔法',
+    lamp_whispers: [
+      '🧞‍♂️ 线盘神灯已苏醒！说出你想具现的物件、角色或实用巧思吧～',
+      '✨ 嗡——多色耗材线盘开始旋转，你的下一个愿望会落在拓竹热床上！',
+      '🔮 告诉我尺寸和想法，剩下的 2D 幻象、免胶水卡扣与 .3MF 交给我！',
+    ],
+    hero_title: '擦亮线盘神灯，说出你的 3D 愿望',
+    hero_sub: '只需在这里自然聊天许愿。显化 2D 幻象后，打印机型号、AMS 台数、耗材色盘、免胶水卡扣与切片选项会自动出现在对话流里供你点选。',
+    starters: [
+      { title: '📜 许愿 · 瓦力功能桌面摆件', desc: '保留瓦力萌眼，背部精准雕刻笔筒或手机槽', prompt: '我想生成一个机器人总动员里面的瓦力，但是又不想完全弄成手办想有一些功能，你有啥建议' },
+      { title: '📜 许愿 · 无 AMS 免胶水耳机架', desc: '哑光黑 + 橘红双色，燕尾槽免胶水分盘 0 废料', prompt: '做一个桌面耳机支架，带底部理线槽，高210mm，哑光黑+橘红，没有AMS，帮我用燕尾槽免胶水拆件打印' },
+      { title: '📜 许愿 · 钢铁侠 MagSafe 充座', desc: 'Q 版战甲胸口内嵌 MagSafe 磁吸槽，1 台 AMS 四色', prompt: '做一个漫威钢铁侠Q版战甲胸口MagSafe无线充底座，高125mm，1台AMS四色打印' },
+      { title: '📜 许愿 · 头顶橘子卡皮巴拉', desc: '呆萌水豚摆件，内置 171 项静默主题与 19 项工程先验', prompt: '做一个头顶橘子的卡皮巴拉水豚桌面摆件，高115mm，1台AMS四色打印' },
+    ],
+    card_2d_title: '🔮 愿望幻象 (2D) & 具现仪式配置',
+    zoom_btn: '🔍 放大端详',
+    sec_printer: '🖨️ 1. 选择你的打印法器（机型）',
+    sec_ams: '🌈 2. 选择 AMS 料盘数与多色方案',
+    sec_joint: '🧩 3. 免胶水机械连接 / 分盘法术',
+    sec_dims_color: '📏 4. 尺寸 (mm) 与耗材颜色',
+    sec_slice: '🔪 5. 输出与自动切片选项',
+    ams_opts: [
+      { n: 0, t: '无 AMS (0 台)', s: '分色拆件 · 0 废料' },
+      { n: 1, t: '1 台 AMS', s: '最多 4 色' },
+      { n: 2, t: '2 台 AMS', s: '最多 8 色' },
+      { n: 3, t: '3 台 AMS', s: '最多 12 色' },
+      { n: 4, t: '4 台 AMS', s: '最多 16 色' },
+    ],
+    mode_opts: [
+      { v: 'auto', t: '自动策略' },
+      { v: 'ams', t: 'AMS 同盘换色' },
+      { v: 'split_no_ams', t: '无 AMS 分盘 (0废料)' },
+      { v: 'monochrome', t: '合并单色' },
+    ],
+    joint_opts: [
+      { v: 'dovetail', t: '燕尾槽', s: '最稳抗拔' },
+      { v: 'snap_pin', t: '弹性卡扣销', s: '按压即扣' },
+      { v: 'press_tenon', t: '紧配榫卯', s: '隐藏平齐' },
+      { v: 'none', t: '无接头', s: '单件/同盘' },
+    ],
+    slice_opts: [
+      { v: true, t: '铸造 .3MF + 自动切片', s: '检测本地 Bambu/Orca CLI' },
+      { v: false, t: '仅铸造 .3MF / .STL / .STEP', s: '拖入切片软件精调' },
+    ],
+    add_color: '+ 加一色',
+    swatch_hint: '点击拓竹 PLA 色珠快速加入：',
+    refresh_2d_btn: '🔄 应用修改 · 重绘 2D 幻象',
+    build_3d_btn: '✨ 吟唱具现 · 铸造 3D 与 .3MF',
+    rendering_2d_inline: '🧞‍♂️ 神灯正在凝结 2D 愿望幻象，你可以继续补充想法…',
+    building_3d_inline: '✨ 魔法阵运转中 · 正在铸造水密 3D 实体、免胶水卡扣与拓竹 .3MF…',
+    thinking_msg: '🧞‍♂️ 神灯正在聆听你的愿望并构思方案…',
+    card_3d_title: '🏆 愿望已具现 · 3D 实体与打印文件',
+    tab_3d: '🧊 3D 实体',
+    tab_split: '🧩 无 AMS 分盘',
+    tab_tt: '📐 四视角验收图',
+    cam_iso: '3/4', cam_front: '正面', cam_side: '侧面', cam_top: '俯视', cam_wire: '线框', cam_spin: '旋转',
+    m_watertight: '几何水密', m_mass: '耗材质量', m_flush: '冲刷废料', m_time: '预估耗时',
+    wt_ok: '✅ 水密可打', wt_warn: '⚠️ 需修补',
+    dfm_toggle: '展开 DFM 体检、AMS 颜色取舍与分块清单',
+    dl_3mf: '⬇ 拓竹多色 .3MF', dl_3mf_tag: '直接切片',
+    dl_split: '⬇ 无AMS免胶水分盘 .3MF', dl_split_tag: '0 废料',
+    dl_stl: '⬇ 通用网格 .STL', dl_stl_tag: '全切片器',
+    dl_step: '⬇ 参数化 CAD .STEP', dl_step_tag: '可编辑',
+    dl_py: '⬇ build123d 源码 .PY', dl_gcode: '⬇ 已切片 .GCODE.3MF',
+    dl_part: (k) => `⬇ 分色零件 ${k}.stl`,
+    mw_drawer_title: '🔎 MakerWorld 灵感宝库搜索',
+    mw_note: '搜索公开 MakerWorld 模型并一键带入许愿对话，或粘贴模型链接提取结构与色盘。',
+    mw_ph: '搜索 MakerWorld（如 wall-e, gridfinity, headphone stand…）',
+    search_btn: '搜索', mw_url_label: '粘贴 MakerWorld 模型链接', import_btn: '导入',
+    attached_label: '当前已绑定参考', no_refs: '暂无绑定参考',
+    use_ref_btn: '+ 带入许愿', open_mw_btn: '打开 ↗',
     modal_mobile_title: '📱 手机 App / 同 Wi-Fi 扫码直连',
     copy_btn: '复制', copied_btn: '已复制',
-    lan_ok: '✅ 局域网已开放，手机连同一 Wi-Fi 扫码即可使用',
-    lan_local_only: '⚠️ 当前仅本机监听 (127.0.0.1)，请加 --lan 启动以开放手机扫码连接',
-    lan_hint_ok: (ip) => `手机与当前电脑连同一局域网 Wi-Fi（本机 IP: ${ip}），手机端可直接对话生成 2D/3D 并下载 .3MF，算力自动走当前电脑 RTX GPU / Apple Silicon。`,
-    lan_hint_local: (cmd) => `在终端运行「${cmd}」或使用桌面版 App（默认开启局域网连接），再扫码即可手机直连。`,
-    guide_ios_t: '🍎 iOS (iPhone / iPad):',
-    guide_ios_d: 'Safari 扫码打开 → 点底部分享图标 →「添加到主屏幕」，全屏 App 运行（也可用仓库 mobile/ 编译原生 Capacitor App）。',
-    guide_and_t: '🤖 Android:',
-    guide_and_d: 'Chrome 扫码打开 → 点右上菜单「安装应用 / 添加到主屏幕」，或用仓库 mobile/ 打包原生 APK。',
-    inline_2d_label: '2D 效果图', inline_zoom: '放大看图', inline_build3d: '⚡ 生成 3D',
-    tab_chat: '💬 对话设计', tab_mw: '🔎 MakerWorld 搜索',
-    quick_label: '快捷示例：', attach_ref: '📎 参考图/STL', auto_2d: '自动画2D', send_btn: '发送 ↵',
-    chat_ph: '输入想法、尺寸(mm)、配色、AMS台数或免胶水要求… (Enter 发送，支持 Ctrl+V 贴图)',
-    mw_note: '直接搜索 MakerWorld 公开模型并一键引用，或粘贴模型链接 / Ctrl+V 粘贴截图提取结构与色盘。',
-    mw_ph: '搜索 MakerWorld（如 wall-e, gridfinity, headphone stand…）',
-    search_btn: '搜索', mw_url_label: '粘贴指定 MakerWorld 模型链接', import_btn: '导入',
-    use_ref_btn: '+ 引用参考', open_mw_btn: '打开',
-    thinking_msg: '正在思考设计方案并更新规格…',
-    rendering_2d_msg: '规格已更新，正在后台渲染 2D 确认图…',
-    attached_label: '当前已绑定参考素材', no_refs: '暂无绑定参考', refs_count: (n) => `${n} 参考`,
-    view_2d: '🎨 2D 概念图', view_3d: '🧊 3D 交互模型', view_split: '🧩 无 AMS 分块排盘', view_tt: '📐 四视角验收图',
-    confirm_btn: '⚡ 确认方案并生成 3D 打印文件',
-    empty_2d_title: '从一句话开始，直接出可打印的 .3MF',
-    empty_2d_desc: '左侧描述你想做的角色或功能件（或点击顶部切换已生成的瓦力笔筒 / 无AMS耳机架），先确认 2D 效果图与颜色尺寸，再一键生成水密 3D 模型。',
-    empty_tt_title: '四视角 3D 验收图', empty_tt_desc: '点击右上角确认并生成 3D 后，这里会自动展示 3/4、正面、侧面、背面四视角成品实色图。',
-    cam_iso: '3/4 视角', cam_front: '正面', cam_side: '侧面', cam_top: '俯视', cam_wire: '线框', cam_spin: '旋转',
-    card_hw: '🖨️ 打印机与 AMS 颜色预算', printer_label: '目标机型', ams_label: '你的 AMS 台数（决定最终颜色取舍上限）',
-    ams0_t: '0 台', ams0_s: '无AMS', ams1_t: '1 台', ams1_s: '≤4色', ams2_t: '2 台', ams2_s: '≤8色', ams3_t: '3 台', ams3_s: '≤12色', ams4_t: '4 台', ams4_s: '≤16色',
-    mode_label: '多色策略', mode_auto: '自动匹配', mode_ams: 'AMS 同盘换色', mode_split: '无AMS分块 (0废料)', mode_mono: '合并单色',
-    joint_label: '免胶水机械连接', joint_dt: '燕尾槽 (最稳抗拔)', joint_sp: '弹性开槽卡扣销', joint_pt: '紧配榫卯', joint_none: '不加连接器',
-    card_dims: '📏 尺寸 (mm) 与耗材色盘', add_color: '+ 加一色', dim_w: '宽 W', dim_d: '深 D', dim_h: '高 H',
-    swatch_label: '拓竹 PLA 常用色板（点击添加到最后槽位）', apply_spec: '应用修改并刷新 2D 预览',
-    card_dfm: '🛡️ 打印体检 (DFM) 与颜色取舍', m_mass: '耗材', m_flush: '冲刷废料', m_time: '预估耗时',
-    dfm_empty: '确认 2D 方案并点击生成后显示完整水密体检、耗时与 AMS 颜色取舍日志。',
-    card_export: '📦 导出 3D 打印文件', export_empty: '等待确认方案并生成…',
-    slot_lbl: (s) => `槽 ${s}`, cap_no_ams: '无 AMS (免胶水拆件/单色)', cap_ams: (n) => `≤ ${n * 4} 色上限`,
-    welcome: '你好！直接告诉我你想打印的任何角色、动植物或实用功能件、尺寸(mm)和 AMS 台数；也可以切到上方「MakerWorld 搜索」找参考，或直接 Ctrl+V 贴图。',
-    watertight_ok: '✅ 水密可打印', watertight_warn: '⚠️ 需切片修补',
-    hud_mode: (d) => `${d.effective_multicolor_mode} · ${d.ams_slots_used}色 · 接头:${d.joint_type_used}`,
-    status_3d_ready: '3D 模型已就绪，可鼠标左键旋转、滚轮缩放',
-    status_loaded: (title) => `已载入项目：${title}`,
-    dl_3mf: '⬇ 拓竹多色 .3MF', dl_3mf_tag: '推荐直拖切片',
-    dl_split: '⬇ 无AMS免胶水排盘 .3MF', dl_split_tag: '0废料',
-    dl_stl: '⬇ 通用单网格 .STL', dl_stl_tag: '全切片器',
-    dl_step: '⬇ 工程参数化 .STEP', dl_step_tag: 'CAD编辑',
-    dl_py: '⬇ build123d 源码 .PY', dl_gcode: '⬇ 已切片 .GCODE.3MF', dl_part: (k) => `⬇ 分色零件 ${k}.stl`,
-    chips: [
-      { label: '🤖 瓦力功能创意', prompt: '我想生成一个机器人总动员里面的瓦力，但是又不想完全弄成手办想有一些功能，你有啥建议' },
-      { label: '🎧 无AMS燕尾槽耳机架', prompt: '做一个桌面耳机支架，带底部理线槽，高210mm，哑光黑+橘红，没有AMS，帮我用燕尾槽免胶水拆件打印' },
-      { label: '🦾 钢铁侠无线充座', prompt: '做一个漫威钢铁侠Q版战甲胸口MagSafe无线充底座，高125mm，1台AMS四色打印' },
-      { label: '📦 Gridfinity收纳盒', prompt: '做一个Gridfinity风格3分区桌面收纳盒，150x100x85mm，1台AMS三色' },
-    ],
+    lan_ok: '✅ 局域网已开放，手机连同一 Wi-Fi 扫码即可许愿',
+    lan_local_only: '⚠️ 当前仅本机模式 (127.0.0.1)，加 --lan 启动即可扫码连接',
+    lan_hint_ok: (ip) => `手机与电脑连同一 Wi-Fi（IP: ${ip}），手机端对话许愿，算力自动走电脑 GPU。`,
+    lan_hint_local: (cmd) => `运行「${cmd}」或打开桌面版即可开放局域网手机扫码。`,
+    guide_ios_t: '🍎 iOS:', guide_ios_d: 'Safari 扫码打开 → 分享 →「添加到主屏幕」，全屏运行。',
+    guide_and_t: '🤖 Android:', guide_and_d: 'Chrome 扫码打开 → 菜单 →「安装应用 / 添加到主屏幕」。',
+    slot_lbl: (s) => `槽${s}`,
   },
   en: {
     brand_tag: 'Wish → 3MF',
-    brand_sub: 'Wish on a spool → 2D confirm → True 3D & Bambu AMS / Glue-Free .3MF',
-    step1: 'Refs & Chat', step2: '2D Color & Size', step3: '3D & Split Preview', step4: 'Export .3MF',
-    new_btn: '+ New', mobile_btn: '📱 Mobile', inspector_btn: '⚙️ Specs', lang_btn: '中文',
-    mnav_chat: 'Chat', mnav_canvas: '2D / 3D', mnav_mw: 'Search', mnav_specs: 'Specs',
-    modal_mobile_title: '📱 Mobile App / Same-Wi-Fi QR Pairing',
-    copy_btn: 'Copy', copied_btn: 'Copied',
-    lan_ok: '✅ LAN Mode Active — scan on iPhone or Android on the same Wi-Fi',
-    lan_local_only: '⚠️ Localhost-only mode (127.0.0.1) — start with --lan to enable phone scanning',
-    lan_hint_ok: (ip) => `Connect your phone to the same Wi-Fi (host IP: ${ip}). All heavy SDXL / Hunyuan3D / CAD computation runs on this PC/Mac GPU automatically.`,
-    lan_hint_local: (cmd) => `Run "${cmd}" (or launch the Desktop App which enables LAN by default) to connect from your phone.`,
-    guide_ios_t: '🍎 iOS (iPhone / iPad):',
-    guide_ios_d: 'Open in Safari → Share → "Add to Home Screen" for full-screen PWA app (or build native iOS via mobile/ Capacitor project).',
-    guide_and_t: '🤖 Android:',
-    guide_and_d: 'Open in Chrome → Menu → "Install app / Add to Home Screen", or build a native APK from mobile/.',
-    inline_2d_label: '2D Concept', inline_zoom: 'View Full', inline_build3d: '⚡ Build 3D',
-    tab_chat: '💬 Designer Chat', tab_mw: '🔎 MakerWorld Search',
-    quick_label: 'Quick prompts:', attach_ref: '📎 Ref / STL', auto_2d: 'Auto 2D', send_btn: 'Send ↵',
-    chat_ph: 'Describe what to print, dimensions (mm), colors, AMS count… (Enter to send, Ctrl+V image)',
-    mw_note: 'Search live MakerWorld models and attach any as reference, or paste a URL / Ctrl+V a screenshot.',
+    new_btn: '✨ New Wish',
+    mw_btn: '🔎 MakerWorld',
+    mobile_btn: '📱 Mobile',
+    theme_to_dark: '🌙 Midnight',
+    theme_to_light: '☀️ Sunlit',
+    lang_btn: '中文',
+    chat_ph: 'Speak your 3D printing wish to the Spool Genie… (Enter to wish, Ctrl+V image)',
+    attach_ref: '📎 Ref / STL',
+    mw_chip: '🔎 MakerWorld',
+    auto_2d: 'Auto 2D Vision',
+    send_btn: '✨ Make Wish',
+    lamp_whisper_idle: '✨ Click to rub the Spool Lamp · Awaken the Genie',
+    lamp_whispers: [
+      '🧞‍♂️ The Spool Genie awakens! Tell me what character or functional print you wish for.',
+      '✨ Your multicolor filament spools are humming — ready to manifest onto the build plate!',
+      '🔮 Speak your idea & dimensions; I will conjure the 2D vision, joints, and Bambu .3MF.',
+    ],
+    hero_title: 'Rub the Spool Lamp. Wish It Into Reality.',
+    hero_sub: 'Just start chatting your wish. Once your 2D vision appears, printer model, Bambu AMS units, filament swatches, glue-free joints, and slicing options appear right inside the conversation.',
+    starters: [
+      { title: '📜 Wish · WALL-E Functional Desk Helper', desc: 'Preserve the iconic eyes while carving a rear pen caddy or phone dock', prompt: 'I want a Pixar WALL-E robot with real desktop utility rather than just a figurine—what functional ideas do you suggest?' },
+      { title: '📜 Wish · No-AMS Dovetail Stand', desc: 'Matte black & orange split with glue-free sliding dovetails (0g poop)', prompt: 'Design a desktop headphone stand with rear cable slot, 210mm tall, matte black and orange, no AMS, glue-free dovetail split parts' },
+      { title: '📜 Wish · Iron Man MagSafe Dock', desc: 'Chibi chest bust with MagSafe charger pocket, 1x AMS 4 colors', prompt: 'Design a stylized Marvel Iron Man chest bust with a MagSafe wireless charger pocket, 125mm tall, 1 AMS unit 4 colors' },
+      { title: '📜 Wish · Capybara with Yuzu', desc: 'Cute desktop companion powered by 171 silent built-in priors', prompt: 'Design a cute capybara with a tangerine on its head, 115mm tall, 1 AMS unit 4 colors' },
+    ],
+    card_2d_title: '🔮 Wish Vision (2D) & Manifestation Setup',
+    zoom_btn: '🔍 Zoom',
+    sec_printer: '🖨️ 1. Choose Your Printer',
+    sec_ams: '🌈 2. Bambu AMS Units & Color Strategy',
+    sec_joint: '🧩 3. Glue-Free Mechanical Joint',
+    sec_dims_color: '📏 4. Dimensions (mm) & Filament Colors',
+    sec_slice: '🔪 5. Export & Slicing',
+    ams_opts: [
+      { n: 0, t: 'No AMS (0)', s: 'Split · 0g poop' },
+      { n: 1, t: '1 AMS', s: '≤ 4 colors' },
+      { n: 2, t: '2 AMS', s: '≤ 8 colors' },
+      { n: 3, t: '3 AMS', s: '≤ 12 colors' },
+      { n: 4, t: '4 AMS', s: '≤ 16 colors' },
+    ],
+    mode_opts: [
+      { v: 'auto', t: 'Auto' },
+      { v: 'ams', t: 'AMS Single-Plate' },
+      { v: 'split_no_ams', t: 'No-AMS Split (0 Poop)' },
+      { v: 'monochrome', t: 'Monochrome' },
+    ],
+    joint_opts: [
+      { v: 'dovetail', t: 'Dovetail', s: 'Strongest' },
+      { v: 'snap_pin', t: 'Snap-Pin', s: 'Click fit' },
+      { v: 'press_tenon', t: 'Press Tenon', s: 'Flush fit' },
+      { v: 'none', t: 'None', s: 'Single piece' },
+    ],
+    slice_opts: [
+      { v: true, t: 'Export .3MF + Auto-Slice', s: 'Uses Bambu/Orca CLI if installed' },
+      { v: false, t: 'Export .3MF / .STL / .STEP only', s: 'Slice manually in Studio' },
+    ],
+    add_color: '+ Add Color',
+    swatch_hint: 'Quick Bambu PLA swatches:',
+    refresh_2d_btn: '🔄 Update & Re-conjure 2D',
+    build_3d_btn: '✨ Manifest 3D & .3MF',
+    rendering_2d_inline: '🧞‍♂️ Conjuring your 2D wish vision in background — keep chatting anytime…',
+    building_3d_inline: '✨ Manifesting watertight 3D mesh, glue-free joints & Bambu .3MF…',
+    thinking_msg: '🧞‍♂️ The Spool Genie is pondering your wish…',
+    card_3d_title: '🏆 Wish Manifested · Interactive 3D & Print Files',
+    tab_3d: '🧊 3D Model',
+    tab_split: '🧩 No-AMS Split',
+    tab_tt: '📐 4-Angle Sheet',
+    cam_iso: '3/4', cam_front: 'Front', cam_side: 'Side', cam_top: 'Top', cam_wire: 'Wire', cam_spin: 'Spin',
+    m_watertight: 'Manifold', m_mass: 'Filament', m_flush: 'AMS Flush', m_time: 'Est. Time',
+    wt_ok: '✅ Watertight', wt_warn: '⚠️ Repair',
+    dfm_toggle: 'Inspect DFM checks, AMS color decisions & split parts',
+    dl_3mf: '⬇ Bambu Multicolor .3MF', dl_3mf_tag: 'Slice Ready',
+    dl_split: '⬇ No-AMS Split Plates .3MF', dl_split_tag: '0 Poop',
+    dl_stl: '⬇ Universal .STL', dl_stl_tag: 'All Slicers',
+    dl_step: '⬇ Parametric CAD .STEP', dl_step_tag: 'Editable',
+    dl_py: '⬇ build123d Source .PY', dl_gcode: '⬇ Sliced .GCODE.3MF',
+    dl_part: (k) => `⬇ Color Part ${k}.stl`,
+    mw_drawer_title: '🔎 MakerWorld Inspiration Vault',
+    mw_note: 'Search live MakerWorld models and weave any into your wish, or paste a URL to extract colors & structure.',
     mw_ph: 'Search MakerWorld (e.g. wall-e, gridfinity, headphone stand…)',
     search_btn: 'Search', mw_url_label: 'Paste MakerWorld Model URL', import_btn: 'Import',
-    use_ref_btn: '+ Use Ref', open_mw_btn: 'Open',
-    thinking_msg: 'Designing proposal & updating specs…',
-    rendering_2d_msg: 'Spec updated — rendering 2D concept preview in background…',
-    attached_label: 'Attached References', no_refs: 'No references attached', refs_count: (n) => `${n} ref`,
-    view_2d: '🎨 2D Concept', view_3d: '🧊 Interactive 3D', view_split: '🧩 No-AMS Split Plates', view_tt: '📐 4-Angle Sheet',
-    confirm_btn: '⚡ Confirm & Build 3D Print Files',
-    empty_2d_title: 'Chat Your Idea → Ready-to-Slice .3MF',
-    empty_2d_desc: 'Describe a character hybrid or custom functional part on the left (or switch to the pre-built WALL-E Pen Holder / No-AMS Headphone Stand above).',
-    empty_tt_title: '4-Angle 3D Verification Sheet', empty_tt_desc: 'Confirm your 2D concept to generate a 4-view multicolor inspection sheet.',
-    cam_iso: '3/4 Iso', cam_front: 'Front', cam_side: 'Side', cam_top: 'Top', cam_wire: 'Wire', cam_spin: 'Spin',
-    card_hw: '🖨️ Printer & AMS Color Budget', printer_label: 'Target Printer', ams_label: 'Your AMS Units (sets final color cap)',
-    ams0_t: '0 AMS', ams0_s: 'Split/Mono', ams1_t: '1 AMS', ams1_s: '≤4 col', ams2_t: '2 AMS', ams2_s: '≤8 col', ams3_t: '3 AMS', ams3_s: '≤12 col', ams4_t: '4 AMS', ams4_s: '≤16 col',
-    mode_label: 'Multicolor Strategy', mode_auto: 'Auto', mode_ams: 'AMS Single-Plate', mode_split: 'No-AMS Split (0 Poop)', mode_mono: 'Monochrome',
-    joint_label: 'Glue-Free Mechanical Joint', joint_dt: 'Dovetail (Strongest)', joint_sp: 'Slotted Snap-Pin', joint_pt: 'Press-Fit Tenon', joint_none: 'None',
-    card_dims: '📏 Dimensions (mm) & Filaments', add_color: '+ Add Color', dim_w: 'Width W', dim_d: 'Depth D', dim_h: 'Height H',
-    swatch_label: 'Bambu PLA Swatches (click to append slot)', apply_spec: 'Apply & Refresh 2D Preview',
-    card_dfm: '🛡️ DFM Printability & Color Decisions', m_mass: 'Filament', m_flush: 'AMS Flush', m_time: 'Est. Time',
-    dfm_empty: 'Build the 3D model to view watertightness, overhangs, AMS color-merge logs, and split parts.',
-    card_export: '📦 Export 3D Print Files', export_empty: 'Confirm design to generate exports…',
-    slot_lbl: (s) => `Slot ${s}`, cap_no_ams: 'No AMS (Glue-Free Split / Mono)', cap_ams: (n) => `≤ ${n * 4} Colors`,
-    welcome: 'Hi! Tell me what character or functional part you want to 3D print, its size in mm, and how many AMS units you have — or switch to the ready 3D WALL-E project above!',
-    watertight_ok: '✅ Watertight Manifold', watertight_warn: '⚠️ Needs Slicer Repair',
-    hud_mode: (d) => `${d.effective_multicolor_mode} · ${d.ams_slots_used} colors · joint: ${d.joint_type_used}`,
-    status_3d_ready: '3D model ready — drag to orbit, scroll to zoom',
-    status_loaded: (title) => `Loaded project: ${title}`,
-    dl_3mf: '⬇ Bambu Multicolor .3MF', dl_3mf_tag: 'Recommended',
-    dl_split: '⬇ No-AMS Glue-Free Plates .3MF', dl_split_tag: '0 Flush',
-    dl_stl: '⬇ Universal Mesh .STL', dl_stl_tag: 'All Slicers',
-    dl_step: '⬇ Parametric CAD .STEP', dl_step_tag: 'Editable',
-    dl_py: '⬇ build123d Source .PY', dl_gcode: '⬇ Sliced .GCODE.3MF', dl_part: (k) => `⬇ Color Part ${k}.stl`,
-    chips: [
-      { label: '🤖 WALL-E Functional Ideas', prompt: 'I want a Pixar WALL-E robot with real desktop utility rather than just a figurine—what functional ideas do you suggest?' },
-      { label: '🎧 No-AMS Dovetail Stand', prompt: 'Design a desktop headphone stand with rear cable slot, 210mm tall, matte black and orange, no AMS, glue-free dovetail split parts' },
-      { label: '🦾 Iron Man MagSafe Dock', prompt: 'Design a stylized Marvel Iron Man chest bust with a MagSafe wireless charger pocket, 125mm tall, 1 AMS unit 4 colors' },
-      { label: '📦 Gridfinity Organizer', prompt: 'Design a 3-compartment Gridfinity desk organizer, 150x100x85mm, 1 AMS unit 3 colors' },
-    ],
+    attached_label: 'Bound References', no_refs: 'No references bound',
+    use_ref_btn: '+ Weave into Wish', open_mw_btn: 'Open ↗',
+    modal_mobile_title: '📱 Mobile App / Same-Wi-Fi QR Pairing',
+    copy_btn: 'Copy', copied_btn: 'Copied',
+    lan_ok: '✅ LAN Active — scan on iPhone or Android on the same Wi-Fi',
+    lan_local_only: '⚠️ Localhost-only mode — start with --lan to enable phone scanning',
+    lan_hint_ok: (ip) => `Same Wi-Fi (IP: ${ip}): make wishes on your phone while your computer GPU renders 2D/3D.`,
+    lan_hint_local: (cmd) => `Run "${cmd}" or launch the Desktop App to pair phones over Wi-Fi.`,
+    guide_ios_t: '🍎 iOS:', guide_ios_d: 'Open in Safari → Share → "Add to Home Screen".',
+    guide_and_t: '🤖 Android:', guide_and_d: 'Open in Chrome → Menu → "Install app / Add to Home Screen".',
+    slot_lbl: (s) => `S${s}`,
   },
 };
 
@@ -136,404 +215,693 @@ function t(key) {
   return (I18N[lang] && I18N[lang][key]) || I18N.zh[key] || key;
 }
 
-function renderQuickChips() {
-  const box = $('quickChips');
-  if (!box) return;
-  box.innerHTML = '';
-  for (const ch of t('chips')) {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.className = 'chip';
-    b.textContent = ch.label;
-    b.onclick = () => sendMessage(ch.prompt);
-    box.appendChild(b);
+function setStatus(msg) {
+  const el = $('statusInline');
+  if (el) el.textContent = msg || '';
+}
+
+function spawnSparkles(x, y, count = 11) {
+  const layer = $('sparkleLayer');
+  if (!layer) return;
+  const colors = ['#ffe08a', '#f5b942', '#c4b5fd', '#ff9f5a', '#6ee7b7'];
+  for (let i = 0; i < count; i++) {
+    const el = document.createElement('div');
+    el.className = 'sparkle-star';
+    const angle = (Math.PI * 2 * i) / count + (Math.random() - 0.5) * 0.4;
+    const dist = 34 + Math.random() * 58;
+    el.style.left = `${x}px`;
+    el.style.top = `${y}px`;
+    el.style.setProperty('--dx', `${Math.cos(angle) * dist}px`);
+    el.style.setProperty('--dy', `${Math.sin(angle) * dist - 22}px`);
+    const color = colors[i % colors.length];
+    el.innerHTML = `<svg viewBox="0 0 24 24" width="14" height="14"><path d="M12 1 L14.5 9.5 L23 12 L14.5 14.5 L12 23 L9.5 14.5 L1 12 L9.5 9.5 Z" fill="${color}"/></svg>`;
+    layer.appendChild(el);
+    setTimeout(() => el.remove(), 900);
   }
 }
 
-function renderMwQuickTags() {
-  const box = $('mwQuickTags');
-  if (!box) return;
-  const tags = ['WALL-E', 'Gridfinity', 'Headphone Stand', 'Skadis', 'Iron Man', 'Totoro'];
-  box.innerHTML = '';
-  for (const tag of tags) {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.className = 'chip';
-    b.textContent = tag;
-    b.onclick = () => {
-      $('mwQuery').value = tag;
-      runMakerWorldSearch(tag);
-    };
-    box.appendChild(b);
+function applyTheme(nextTheme) {
+  theme = nextTheme === 'light' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', theme);
+  localStorage.setItem('sg_theme', theme);
+  const metaEl = $('metaThemeColor');
+  if (metaEl) metaEl.setAttribute('content', theme === 'dark' ? '#0a0b1a' : '#faf6ee');
+  $('themeToggleBtn').textContent = theme === 'dark' ? t('theme_to_light') : t('theme_to_dark');
+  if (threeCtx?.scene) {
+    threeCtx.scene.background = new THREE.Color(theme === 'dark' ? 0x0c0e22 : 0xf3ede2);
   }
 }
 
-function applyLang(newLang) {
-  lang = newLang === 'en' ? 'en' : 'zh';
-  localStorage.setItem('pf_lang', lang);
+function applyLang(nextLang) {
+  lang = nextLang === 'en' ? 'en' : 'zh';
+  localStorage.setItem('sg_lang', lang);
   document.documentElement.lang = lang === 'en' ? 'en' : 'zh-CN';
   document.querySelectorAll('[data-i18n]').forEach((el) => {
-    const k = el.dataset.i18n;
-    const val = t(k);
+    const val = t(el.dataset.i18n);
     if (typeof val === 'string') el.textContent = val;
   });
   $('langToggleBtn').textContent = t('lang_btn');
+  $('themeToggleBtn').textContent = theme === 'dark' ? t('theme_to_light') : t('theme_to_dark');
   $('chatInput').placeholder = t('chat_ph');
   if ($('mwQuery')) $('mwQuery').placeholder = t('mw_ph');
-  renderQuickChips();
+  const firstOpt = $('projectSwitcher')?.options?.[0];
+  if (firstOpt && firstOpt.value === '') {
+    firstOpt.textContent = lang === 'en' ? '✨ New Wish Sanctuary…' : '✨ 许愿殿堂（新对话）…';
+  }
   renderMwQuickTags();
-  if (project) renderProject();
+  if (project) renderStream();
 }
 
-// Three.js scene state
-let renderer, scene, camera, controls, currentModelGroup, bedGrid, lastModelSize = new THREE.Vector3(100, 100, 100);
-const loader = new GLTFLoader();
-
-const $ = (id) => document.getElementById(id);
-
-function setStatus(msg) {
-  $('statusBar').textContent = msg;
+function scrollChatBottom() {
+  const sc = $('chatScroll');
+  if (sc) sc.scrollTop = sc.scrollHeight;
 }
 
-function setBusy(isBusy, title = '正在生成…', sub = 'RTX 5090 本地推理中，请稍候') {
-  $('busyOverlay').classList.toggle('hidden', !isBusy);
-  $('busyTitle').textContent = title;
-  $('busySub').textContent = sub;
-  $('sendBtn').disabled = isBusy;
-  $('confirmBuildBtn').disabled = isBusy;
+function openLightbox(src, caption = '') {
+  $('lightboxImg').src = src;
+  $('lightboxCap').textContent = caption;
+  $('lightboxModal').classList.remove('hidden');
 }
 
-function updateStepper(stage) {
-  const order = ['ideation', 'concept_review', 'model_ready', 'exported'];
-  const idx = Math.max(0, order.indexOf(stage || 'ideation'));
-  document.querySelectorAll('.step').forEach((el) => {
-    const sIdx = order.indexOf(el.dataset.step);
-    el.classList.remove('active', 'done');
-    if (sIdx < idx) el.classList.add('done');
-    else if (sIdx === idx) el.classList.add('active');
-  });
+function destroyThree() {
+  if (!threeCtx) return;
+  cancelAnimationFrame(threeCtx.rafId);
+  if (threeCtx.resizeObs) threeCtx.resizeObs.disconnect();
+  threeCtx.renderer?.dispose();
+  threeCtx = null;
 }
 
-function initThree() {
-  const container = $('threeContainer');
-  if (renderer) return;
-  scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x0f1522);
+function mountInlineThree(container, glbUrl, hudEls) {
+  destroyThree();
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(theme === 'dark' ? 0x0c0e22 : 0xf3ede2);
 
-  camera = new THREE.PerspectiveCamera(40, container.clientWidth / Math.max(container.clientHeight, 1), 0.5, 4000);
+  const w = Math.max(container.clientWidth, 300);
+  const h = Math.max(container.clientHeight, 260);
+  const camera = new THREE.PerspectiveCamera(40, w / h, 0.5, 4000);
   camera.position.set(190, 150, 210);
 
-  renderer = new THREE.WebGLRenderer({ antialias: true });
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-  renderer.setSize(container.clientWidth, container.clientHeight);
+  renderer.setSize(w, h);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.15;
+  container.innerHTML = '';
   container.appendChild(renderer.domElement);
 
-  controls = new OrbitControls(camera, renderer.domElement);
+  const controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
   controls.autoRotate = autoSpin;
-  controls.autoRotateSpeed = 1.4;
+  controls.autoRotateSpeed = 1.3;
 
-  scene.add(new THREE.HemisphereLight(0xf6f9ff, 0x263147, 1.45));
-  const key = new THREE.DirectionalLight(0xffffff, 1.6);
+  scene.add(new THREE.HemisphereLight(0xfff7e6, 0x3b3564, 1.5));
+  const key = new THREE.DirectionalLight(0xfffaf0, 1.6);
   key.position.set(180, 280, 190);
   scene.add(key);
-  const rim = new THREE.DirectionalLight(0x8ec0ff, 0.85);
+  const rim = new THREE.DirectionalLight(0xb794f4, 0.9);
   rim.position.set(-190, 130, -170);
   scene.add(rim);
 
-  drawBuildPlate(256);
+  const pInfo = meta?.printers?.[project?.spec?.printer_id];
+  const bedSize = pInfo ? Math.max(pInfo.bed_x_mm, pInfo.bed_y_mm) : 256;
+  const grid = new THREE.GridHelper(
+    bedSize,
+    Math.round(bedSize / 16),
+    theme === 'dark' ? 0x6b5b95 : 0xc7a97b,
+    theme === 'dark' ? 0x262344 : 0xe3d6c0
+  );
+  scene.add(grid);
 
-  window.addEventListener('resize', () => {
-    if (!renderer) return;
-    const w = container.clientWidth;
-    const h = Math.max(container.clientHeight, 1);
-    camera.aspect = w / h;
-    camera.updateProjectionMatrix();
-    renderer.setSize(w, h);
-  });
+  const ctx = {
+    scene, camera, renderer, controls,
+    modelGroup: null,
+    lastSize: new THREE.Vector3(100, 100, 100),
+    rafId: 0,
+    resizeObs: null,
+  };
+  threeCtx = ctx;
 
-  const animate = () => {
-    requestAnimationFrame(animate);
+  const setCam = (preset) => {
+    const maxDim = Math.max(ctx.lastSize.x, ctx.lastSize.y, ctx.lastSize.z, 70);
+    const cy = ctx.lastSize.y * 0.45;
+    controls.target.set(0, cy, 0);
+    if (preset === 'front') camera.position.set(0, cy * 1.05, maxDim * 2.0);
+    else if (preset === 'side') camera.position.set(maxDim * 2.0, cy * 1.05, 0);
+    else if (preset === 'top') camera.position.set(0, maxDim * 2.2, 0.01);
+    else camera.position.set(maxDim * 1.4, maxDim * 1.1, maxDim * 1.45);
+    controls.update();
+  };
+  ctx.setCam = setCam;
+
+  ctx.applyWire = () => {
+    if (!ctx.modelGroup) return;
+    ctx.modelGroup.traverse((o) => {
+      if (o.isMesh && o.material) o.material.wireframe = wireframeOn;
+    });
+  };
+
+  if (typeof ResizeObserver !== 'undefined') {
+    const ro = new ResizeObserver(() => {
+      const nw = container.clientWidth;
+      const nh = Math.max(container.clientHeight, 1);
+      if (nw > 0 && nh > 0) {
+        camera.aspect = nw / nh;
+        camera.updateProjectionMatrix();
+        renderer.setSize(nw, nh);
+      }
+    });
+    ro.observe(container);
+    ctx.resizeObs = ro;
+  }
+
+  const loop = () => {
+    ctx.rafId = requestAnimationFrame(loop);
     controls.autoRotate = autoSpin;
     controls.update();
     renderer.render(scene, camera);
   };
-  animate();
-}
+  loop();
 
-function drawBuildPlate(sizeMM = 256) {
-  if (!scene) return;
-  if (bedGrid) scene.remove(bedGrid);
-  bedGrid = new THREE.GridHelper(sizeMM, Math.round(sizeMM / 16), 0x4b6a96, 0x222f46);
-  scene.add(bedGrid);
-}
-
-function setCameraPreset(preset) {
-  if (!camera || !controls) return;
-  const maxDim = Math.max(lastModelSize.x, lastModelSize.y, lastModelSize.z, 70);
-  const cy = lastModelSize.y * 0.45;
-  controls.target.set(0, cy, 0);
-  if (preset === 'front') camera.position.set(0, cy * 1.05, maxDim * 2.0);
-  else if (preset === 'side') camera.position.set(maxDim * 2.0, cy * 1.05, 0);
-  else if (preset === 'top') camera.position.set(0, maxDim * 2.2, 0.01);
-  else camera.position.set(maxDim * 1.4, maxDim * 1.1, maxDim * 1.45);
-  controls.update();
-}
-
-function applyWireframe() {
-  if (!currentModelGroup) return;
-  currentModelGroup.traverse((obj) => {
-    if (obj.isMesh && obj.material) {
-      obj.material.wireframe = wireframeOn;
-    }
-  });
-}
-
-function loadGlbPreview(url) {
-  if (!url) return;
-  initThree();
-  setStatus(`加载 3D 交互模型 (${url})…`);
-  loader.load(
-    `${url}?t=${Date.now()}`,
-    (gltf) => {
-      if (currentModelGroup) scene.remove(currentModelGroup);
-      const wrapper = new THREE.Group();
-      gltf.scene.rotation.x = -Math.PI / 2;
-      wrapper.add(gltf.scene);
-
-      const box = new THREE.Box3().setFromObject(wrapper);
-      const center = box.getCenter(new THREE.Vector3());
-      const size = box.getSize(new THREE.Vector3());
-      wrapper.position.set(-center.x, -box.min.y, -center.z);
-      scene.add(wrapper);
-      currentModelGroup = wrapper;
-      lastModelSize = size.clone();
-      applyWireframe();
-      setCameraPreset('iso');
-
-      $('hudDims').textContent = `${size.x.toFixed(1)} × ${size.z.toFixed(1)} × ${size.y.toFixed(1)} mm`;
-      const d = project?.dfm;
-      $('hudWatertight').textContent = d ? (d.watertight ? t('watertight_ok') : t('watertight_warn')) : '3D';
-      $('hudMode').textContent = d ? t('hud_mode')(d) : 'Three.js';
-      setStatus(t('status_3d_ready'));
-    },
-    undefined,
-    (err) => setStatus(`3D 预览加载失败: ${err.message || err}`)
-  );
-}
-
-function switchView(view) {
-  activeView = view;
-  document.querySelectorAll('.vpill').forEach((el) => el.classList.toggle('active', el.dataset.view === view));
-  $('view2d').classList.toggle('active', view === '2d');
-  $('view3d').classList.toggle('active', view === '3d' || view === 'split');
-  $('viewTurntable').classList.toggle('active', view === 'turntable');
-
-  if (view === '3d' && project?.exports?.urls?.preview_glb) {
-    loadGlbPreview(project.exports.urls.preview_glb);
-  } else if (view === 'split') {
-    const url = project?.exports?.urls?.split_preview_glb || project?.exports?.urls?.preview_glb;
-    if (url) loadGlbPreview(url);
+  if (glbUrl) {
+    gltfLoader.load(
+      `${glbUrl}?t=${Date.now()}`,
+      (gltf) => {
+        if (threeCtx !== ctx) return;
+        const wrapper = new THREE.Group();
+        gltf.scene.rotation.x = -Math.PI / 2;
+        wrapper.add(gltf.scene);
+        const box = new THREE.Box3().setFromObject(wrapper);
+        const center = box.getCenter(new THREE.Vector3());
+        const size = box.getSize(new THREE.Vector3());
+        wrapper.position.set(-center.x, -box.min.y, -center.z);
+        scene.add(wrapper);
+        ctx.modelGroup = wrapper;
+        ctx.lastSize = size.clone();
+        ctx.applyWire();
+        setCam('iso');
+        if (hudEls?.dims) hudEls.dims.textContent = `${size.x.toFixed(1)} × ${size.z.toFixed(1)} × ${size.y.toFixed(1)} mm`;
+      },
+      undefined,
+      () => { if (hudEls?.dims) hudEls.dims.textContent = '3D load error'; }
+    );
   }
 }
 
-function updateAmsPills(amsUnits) {
-  document.querySelectorAll('.ams-pill').forEach((b) => {
-    b.classList.toggle('active', Number(b.dataset.ams) === Number(amsUnits));
-  });
-  const badge = $('colorCapBadge');
-  badge.textContent = amsUnits === 0 ? t('cap_no_ams') : t('cap_ams')(amsUnits);
-}
-
-function renderProject() {
-  if (!project) return;
-  const spec = project.spec;
-  $('projectIdTag').textContent = project.project_id;
-  updateStepper(project.stage);
-
-  // Chat log (also embed latest 2D concept preview card inline so users NEVER miss the 2D render!)
-  const log = $('chatLog');
-  log.innerHTML = '';
-  if (!project.history.length) {
-    log.innerHTML = `<div class="msg assistant">${t('welcome')}</div>`;
+function renderAttachedRefs() {
+  const strip = $('attachedStrip');
+  const drawerList = $('attachedRefsDrawer');
+  const refs = project?.references || [];
+  if (refs.length) {
+    strip.classList.remove('hidden');
+    strip.innerHTML = refs.map((r) => `<span class="att-pill">📎 ${r.title}</span>`).join('');
+    drawerList.innerHTML = refs.map((r) => `<div class="att-pill">📎 ${r.title} (${r.source})</div>`).join('');
   } else {
-    for (const turn of project.history) {
-      const div = document.createElement('div');
-      div.className = `msg ${turn.role}`;
-      div.textContent = turn.content;
-      log.appendChild(div);
-    }
+    strip.classList.add('hidden');
+    strip.innerHTML = '';
+    drawerList.innerHTML = `<div>${t('no_refs')}</div>`;
   }
-  const latestConcept = project.concepts?.[project.concepts.length - 1];
-  if (latestConcept?.image_url) {
-    const card = document.createElement('div');
-    card.className = 'chat-concept-card';
-    const imgSrc = `${latestConcept.image_url}?t=${Date.now()}`;
-    card.innerHTML = `
-      <img src="${imgSrc}" alt="2D Concept Render" title="${t('inline_zoom')}" />
-      <div class="chat-concept-foot">
-        <span>🎨 ${t('inline_2d_label')} #${project.concepts.length} (${spec.dimensions.width_mm}×${spec.dimensions.depth_mm}×${spec.dimensions.height_mm} mm)</span>
-        <div class="chat-concept-actions">
-          <button type="button" class="mini-btn zoom-2d-btn">${t('inline_zoom')}</button>
-          <button type="button" class="mini-btn accent build-3d-btn">${t('inline_build3d')}</button>
+}
+
+function buildSpecPatch(spec) {
+  return {
+    printer_id: spec.printer_id,
+    ams_units: spec.ams_units,
+    multicolor_mode: spec.multicolor_mode,
+    joint_type: spec.joint_type,
+    dimensions: spec.dimensions,
+    filaments: spec.filaments,
+  };
+}
+
+function buildInlineSetupCard(spec, latestConcept) {
+  const card = document.createElement('section');
+  card.className = 'inline-card';
+  const printers = Object.values(meta?.printers || {});
+  const showJointSection = spec.ams_units === 0 || spec.multicolor_mode === 'split_no_ams' || spec.joint_type !== 'none';
+
+  card.innerHTML = `
+    <div class="icard-head">
+      <div class="icard-title">${t('card_2d_title')}</div>
+      <span class="badge-soft">${spec.dimensions.width_mm} × ${spec.dimensions.depth_mm} × ${spec.dimensions.height_mm} mm · ${spec.ams_units === 0 ? 'No-AMS' : `${spec.ams_units} AMS`}</span>
+    </div>
+    <div class="icard-body">
+      ${isRendering2D
+        ? `<div class="magic-ritual-loader"><div class="magic-orb-spin"></div><span>${t('rendering_2d_inline')}</span></div>`
+        : latestConcept?.image_url
+          ? `<div class="concept-stage">
+               <img src="${latestConcept.image_url}?t=${Date.now()}" alt="2D Vision" class="js-zoom-2d" />
+               <div class="concept-bar">
+                 <span>✨ ${latestConcept.backend} · ${spec.filaments.length} colors</span>
+                 <button type="button" class="btn-link js-zoom-2d">${t('zoom_btn')}</button>
+               </div>
+             </div>`
+          : ''}
+
+      <div class="choice-section">
+        <div class="choice-label"><span>${t('sec_printer')}</span></div>
+        <div class="pill-row js-printer-pills">
+          ${printers.map((p) => `
+            <button type="button" class="choice-pill ${p.id === spec.printer_id ? 'active' : ''}" data-printer="${p.id}">
+              <span>${p.name.replace('Bambu Lab ', '')}</span>
+              <small>${p.bed_x_mm}×${p.bed_y_mm}×${p.bed_z_mm}</small>
+            </button>
+          `).join('')}
         </div>
       </div>
-    `;
-    const imgEl = card.querySelector('img');
-    imgEl.onload = () => { log.scrollTop = log.scrollHeight; };
-    imgEl.onclick = () => {
-      switchView('2d');
-      if (window.innerWidth <= 768) setMobileTab('canvas');
+
+      <div class="choice-section">
+        <div class="choice-label"><span>${t('sec_ams')}</span></div>
+        <div class="pill-row js-ams-pills">
+          ${t('ams_opts').map((o) => `
+            <button type="button" class="choice-pill ${Number(spec.ams_units) === o.n ? 'active' : ''}" data-ams="${o.n}">
+              <span>${o.t}</span><small>${o.s}</small>
+            </button>
+          `).join('')}
+        </div>
+        <div class="pill-row js-mode-pills">
+          ${t('mode_opts').map((m) => `
+            <button type="button" class="choice-pill ${spec.multicolor_mode === m.v ? 'active' : ''}" data-mode="${m.v}">
+              <span>${m.t}</span>
+            </button>
+          `).join('')}
+        </div>
+      </div>
+
+      <div class="choice-section ${showJointSection ? '' : 'hidden'} js-joint-section">
+        <div class="choice-label"><span>${t('sec_joint')}</span></div>
+        <div class="pill-row js-joint-pills">
+          ${t('joint_opts').map((j) => `
+            <button type="button" class="choice-pill ${spec.joint_type === j.v ? 'active' : ''}" data-joint="${j.v}">
+              <span>${j.t}</span><small>${j.s}</small>
+            </button>
+          `).join('')}
+        </div>
+      </div>
+
+      <div class="choice-section">
+        <div class="choice-label">
+          <span>${t('sec_dims_color')}</span>
+          <button type="button" class="btn-link js-add-color">${t('add_color')}</button>
+        </div>
+        <div class="dims-inline">
+          <label class="dim-box">W <input type="number" min="10" max="400" class="js-dim-w" value="${spec.dimensions.width_mm}" /> mm</label>
+          <label class="dim-box">D <input type="number" min="10" max="400" class="js-dim-d" value="${spec.dimensions.depth_mm}" /> mm</label>
+          <label class="dim-box">H <input type="number" min="4" max="400" class="js-dim-h" value="${spec.dimensions.height_mm}" /> mm</label>
+        </div>
+        <div class="filament-chips js-filament-chips">
+          ${spec.filaments.map((fl, idx) => `
+            <div class="fl-chip" data-idx="${idx}">
+              <input type="color" value="${fl.hex_color}" class="js-fl-color" />
+              <input type="text" value="${fl.name}" class="js-fl-name" />
+              <span class="choice-hint">${t('slot_lbl')(fl.slot)}</span>
+              ${spec.filaments.length > 1 ? `<button type="button" class="js-fl-del" data-idx="${idx}">×</button>` : ''}
+            </div>
+          `).join('')}
+        </div>
+        <div class="choice-hint">${t('swatch_hint')}</div>
+        <div class="swatch-strip js-swatches">
+          ${Object.entries(meta?.swatches || {}).map(([name, hx]) => `
+            <button type="button" class="swatch-dot" style="background:${hx}" title="${name} (${hx})" data-name="${name}" data-hex="${hx}"></button>
+          `).join('')}
+        </div>
+      </div>
+
+      <div class="choice-section">
+        <div class="choice-label"><span>${t('sec_slice')}</span></div>
+        <div class="pill-row js-slice-pills">
+          ${t('slice_opts').map((s) => `
+            <button type="button" class="choice-pill ${runSlicerPref === s.v ? 'active' : ''}" data-slice="${s.v}">
+              <span>${s.t}</span><small>${s.s}</small>
+            </button>
+          `).join('')}
+        </div>
+      </div>
+
+      <div class="icard-actions">
+        <button type="button" class="btn btn-secondary js-refresh-2d" ${isBuilding3D ? 'disabled' : ''}>${t('refresh_2d_btn')}</button>
+        <div class="icard-actions-right">
+          <button type="button" class="btn btn-magic js-build-3d" ${isBuilding3D ? 'disabled' : ''}>${t('build_3d_btn')}</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  card.querySelectorAll('.js-zoom-2d').forEach((el) => {
+    el.onclick = () => {
+      if (latestConcept?.image_url) {
+        openLightbox(`${latestConcept.image_url}?t=${Date.now()}`, `${spec.title} (${spec.dimensions.width_mm}×${spec.dimensions.depth_mm}×${spec.dimensions.height_mm} mm)`);
+      }
     };
-    card.querySelector('.zoom-2d-btn').onclick = () => {
-      switchView('2d');
-      if (window.innerWidth <= 768) setMobileTab('canvas');
-    };
-    card.querySelector('.build-3d-btn').onclick = () => {
-      if (window.innerWidth <= 768) setMobileTab('canvas');
-      $('confirmBuildBtn').click();
-    };
-    log.appendChild(card);
-  }
-  log.scrollTop = log.scrollHeight;
-  $('refCount').textContent = t('refs_count')(project.references.length);
-
-  // Attached refs list
-  const att = $('attachedRefs');
-  att.innerHTML = project.references.length
-    ? project.references.map((r) => `<div class="mw-item"><span>${r.title}</span><span class="muted">${r.source}</span></div>`).join('')
-    : `<div class="muted">${t('no_refs')}</div>`;
-
-  // Right-pane controls
-  $('printerSelect').value = spec.printer_id;
-  updateAmsPills(spec.ams_units);
-  $('multicolorModeSelect').value = spec.multicolor_mode;
-  $('jointTypeSelect').value = spec.joint_type;
-  $('dimW').value = spec.dimensions.width_mm;
-  $('dimD').value = spec.dimensions.depth_mm;
-  $('dimH').value = spec.dimensions.height_mm;
-
-  const pInfo = meta?.printers?.[spec.printer_id];
-  if (pInfo && scene) drawBuildPlate(Math.max(pInfo.bed_x_mm, pInfo.bed_y_mm));
-
-  // Filaments editor
-  const flBox = $('filamentList');
-  flBox.innerHTML = '';
-  spec.filaments.forEach((fl, idx) => {
-    const row = document.createElement('div');
-    row.className = 'fl-row';
-    row.innerHTML = `
-      <input type="color" value="${fl.hex_color}" data-idx="${idx}" class="fl-color" />
-      <input type="text" value="${fl.name}" data-idx="${idx}" class="fl-name" />
-      <span class="muted">${t('slot_lbl')(fl.slot)}</span>
-      <button class="btn-link fl-del" data-idx="${idx}" title="Remove">×</button>
-    `;
-    flBox.appendChild(row);
   });
 
-  // 2D Concept Gate
-  const latest = project.concepts?.[project.concepts.length - 1];
-  if (latest?.image_url) {
-    $('conceptPlaceholder').classList.add('hidden');
-    $('conceptImg').classList.remove('hidden');
-    $('conceptImg').src = `${latest.image_url}?t=${Date.now()}`;
-    $('conceptCaption').innerHTML = `<span>${latest.backend}</span><span>${spec.dimensions.width_mm}×${spec.dimensions.depth_mm}×${spec.dimensions.height_mm} mm · ${spec.filaments.length} colors</span>`;
-  } else {
-    $('conceptPlaceholder').classList.remove('hidden');
-    $('conceptImg').classList.add('hidden');
-    $('conceptCaption').textContent = '';
-  }
+  const syncInputs = () => {
+    spec.dimensions.width_mm = Number(card.querySelector('.js-dim-w').value) || spec.dimensions.width_mm;
+    spec.dimensions.depth_mm = Number(card.querySelector('.js-dim-d').value) || spec.dimensions.depth_mm;
+    spec.dimensions.height_mm = Number(card.querySelector('.js-dim-h').value) || spec.dimensions.height_mm;
+    const fls = [];
+    card.querySelectorAll('.fl-chip').forEach((chip, i) => {
+      fls.push({
+        slot: i + 1,
+        hex_color: chip.querySelector('.js-fl-color').value.toUpperCase(),
+        name: chip.querySelector('.js-fl-name').value || `Color ${i + 1}`,
+        material: 'PLA',
+        role: i === 0 ? 'main body' : `accent ${i}`,
+      });
+    });
+    if (fls.length) spec.filaments = fls;
+  };
 
-  // 4-angle turntable
-  const ttUrl = project.exports?.urls?.turntable_preview;
-  if (ttUrl) {
-    $('turntablePlaceholder').classList.add('hidden');
-    $('turntableImg').classList.remove('hidden');
-    $('turntableImg').src = `${ttUrl}?t=${Date.now()}`;
-    $('turntableCaption').textContent = `${spec.title} — 3/4 · Front · Side · Rear`;
-  } else {
-    $('turntablePlaceholder').classList.remove('hidden');
-    $('turntableImg').classList.add('hidden');
-    $('turntableCaption').textContent = '';
-  }
-
-  // DFM & Color Decisions
-  const dfmBox = $('dfmSummary');
-  if (project.dfm) {
-    const d = project.dfm;
-    const exp = project.exports || {};
-    $('dfmMetrics').classList.remove('hidden');
-    $('mMass').textContent = `${exp.estimated_filament_g ?? d.estimated_mass_g} g`;
-    $('mFlush').textContent = `${exp.estimated_flush_g ?? 0} g`;
-    $('mTime').textContent = exp.estimated_print_minutes ? `${Math.round(exp.estimated_print_minutes)} min` : '-';
-    $('hudWatertight').textContent = d.watertight ? t('watertight_ok') : t('watertight_warn');
-    $('hudMode').textContent = t('hud_mode')(d);
-    if (activeView === '3d' || activeView === 'split') setStatus(t('status_3d_ready'));
-
-    let html = '';
-    for (const c of d.checks || []) {
-      html += `<div class="check-pill ${c.status}"><strong>${c.name}:</strong> ${c.detail}</div>`;
-    }
-    if (d.color_decisions?.length) {
-      html += `<div class="micro-label mt-4">AMS Color Budget (${d.ams_units_configured} AMS):</div>`;
-      for (const cd of d.color_decisions) {
-        html += `<div class="muted">• ${cd.source_hex} → ${t('slot_lbl')(cd.mapped_slot)} ${cd.mapped_name} (${cd.action}${cd.delta_e ? `, ΔE=${cd.delta_e}` : ''})</div>`;
+  card.querySelectorAll('.js-printer-pills .choice-pill').forEach((b) => {
+    b.onclick = () => { syncInputs(); spec.printer_id = b.dataset.printer; renderStream(); };
+  });
+  card.querySelectorAll('.js-ams-pills .choice-pill').forEach((b) => {
+    b.onclick = () => {
+      syncInputs();
+      const n = Number(b.dataset.ams);
+      spec.ams_units = n;
+      if (n === 0) {
+        spec.multicolor_mode = 'split_no_ams';
+        if (spec.joint_type === 'none') spec.joint_type = 'dovetail';
+      } else if (spec.multicolor_mode === 'split_no_ams') {
+        spec.multicolor_mode = 'ams';
       }
+      renderStream();
+    };
+  });
+  card.querySelectorAll('.js-mode-pills .choice-pill').forEach((b) => {
+    b.onclick = () => {
+      syncInputs();
+      spec.multicolor_mode = b.dataset.mode;
+      if (b.dataset.mode === 'split_no_ams' && spec.joint_type === 'none') spec.joint_type = 'dovetail';
+      renderStream();
+    };
+  });
+  card.querySelectorAll('.js-joint-pills .choice-pill').forEach((b) => {
+    b.onclick = () => { syncInputs(); spec.joint_type = b.dataset.joint; renderStream(); };
+  });
+  card.querySelectorAll('.js-slice-pills .choice-pill').forEach((b) => {
+    b.onclick = () => { syncInputs(); runSlicerPref = b.dataset.slice === 'true'; renderStream(); };
+  });
+  card.querySelector('.js-add-color').onclick = () => {
+    syncInputs();
+    if (spec.filaments.length < 16) {
+      const defaults = ['#1E4C8A', '#F2EFE9', '#4D9A4E', '#F4D03F', '#C9302C', '#A28BC7'];
+      const next = spec.filaments.length + 1;
+      spec.filaments.push({ slot: next, name: `Color ${next}`, hex_color: defaults[(next - 1) % defaults.length], material: 'PLA', role: `accent ${next}` });
+      renderStream();
     }
-    if (d.split_parts?.length > 1) {
-      html += `<div class="micro-label mt-4">Split Parts (${d.split_parts.length}):</div>`;
-      for (const sp of d.split_parts) {
-        html += `<div class="muted">• Plate ${sp.plate_index} [${t('slot_lbl')(sp.slot)}] ${sp.name} (${sp.bbox_mm.join('×')} mm · ${sp.joint_type})</div>`;
+  };
+  card.querySelectorAll('.js-fl-del').forEach((btn) => {
+    btn.onclick = () => {
+      syncInputs();
+      const idx = Number(btn.dataset.idx);
+      if (spec.filaments.length > 1) {
+        spec.filaments.splice(idx, 1);
+        spec.filaments.forEach((f, i) => (f.slot = i + 1));
+        renderStream();
       }
-    }
-    dfmBox.innerHTML = html;
-  } else {
-    $('dfmMetrics').classList.add('hidden');
-    dfmBox.textContent = t('dfm_empty');
-  }
+    };
+  });
+  card.querySelectorAll('.js-swatches .swatch-dot').forEach((sw) => {
+    sw.onclick = () => {
+      syncInputs();
+      if (spec.filaments.length < 16) {
+        spec.filaments.push({ slot: spec.filaments.length + 1, name: sw.dataset.name, hex_color: sw.dataset.hex, material: 'PLA', role: `accent ${spec.filaments.length}` });
+        renderStream();
+      }
+    };
+  });
 
-  // Exports
-  const expBox = $('exportLinks');
-  const urls = project.exports?.urls || {};
+  card.querySelector('.js-refresh-2d').onclick = async (e) => {
+    syncInputs();
+    const rect = e.currentTarget.getBoundingClientRect();
+    spawnSparkles(rect.left + rect.width / 2, rect.top + rect.height / 2, 10);
+    isRendering2D = true;
+    renderStream();
+    scrollChatBottom();
+    try {
+      const r = await fetch(`/api/projects/${project.project_id}/spec`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ patch: buildSpecPatch(spec), re_render_2d: true }),
+      });
+      project = await r.json();
+    } finally {
+      isRendering2D = false;
+      renderStream();
+      scrollChatBottom();
+    }
+  };
+
+  card.querySelector('.js-build-3d').onclick = async (e) => {
+    syncInputs();
+    const rect = e.currentTarget.getBoundingClientRect();
+    spawnSparkles(rect.left + rect.width / 2, rect.top + rect.height / 2, 16);
+    isBuilding3D = true;
+    renderStream();
+    scrollChatBottom();
+    try {
+      await fetch(`/api/projects/${project.project_id}/spec`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ patch: buildSpecPatch(spec), re_render_2d: false }),
+      });
+      const r = await fetch(`/api/projects/${project.project_id}/confirm-build`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ run_slicer: runSlicerPref }),
+      });
+      project = await r.json();
+      await refreshProjectList(project.project_id);
+      active3DTab = project.exports?.urls?.split_preview_glb ? 'split' : '3d';
+    } finally {
+      isBuilding3D = false;
+      renderStream();
+      scrollChatBottom();
+      spawnSparkles(window.innerWidth / 2, window.innerHeight * 0.45, 18);
+    }
+  };
+
+  return card;
+}
+
+function buildInline3DExportCard() {
+  const d = project.dfm;
+  const exp = project.exports || {};
+  const urls = exp.urls || {};
+  const card = document.createElement('section');
+  card.className = 'inline-card';
+
+  const hasSplit = Boolean(urls.split_preview_glb);
+  const hasTT = Boolean(urls.turntable_preview);
+  if (active3DTab === 'split' && !hasSplit) active3DTab = '3d';
+  if (active3DTab === 'turntable' && !hasTT) active3DTab = '3d';
+
   const links = [];
-  if (urls.threemf) links.push(`<a class="dl-btn primary" href="${urls.threemf}" download>${t('dl_3mf')} <span class="dl-badge">${t('dl_3mf_tag')}</span></a>`);
-  if (urls.split_plates_3mf) links.push(`<a class="dl-btn primary" href="${urls.split_plates_3mf}" download>${t('dl_split')} <span class="dl-badge">${t('dl_split_tag')}</span></a>`);
-  if (urls.stl) links.push(`<a class="dl-btn" href="${urls.stl}" download>${t('dl_stl')} <span class="dl-badge">${t('dl_stl_tag')}</span></a>`);
-  if (urls.step) links.push(`<a class="dl-btn" href="${urls.step}" download>${t('dl_step')} <span class="dl-badge">${t('dl_step_tag')}</span></a>`);
-  if (urls.cad_script) links.push(`<a class="dl-btn" href="${urls.cad_script}" download>${t('dl_py')} <span class="dl-badge">Python</span></a>`);
-  if (urls.gcode_3mf) links.push(`<a class="dl-btn primary" href="${urls.gcode_3mf}" download>${t('dl_gcode')} <span class="dl-badge">CLI</span></a>`);
+  if (urls.threemf) links.push(`<a class="dl-btn primary" href="${urls.threemf}" download>${t('dl_3mf')} <span class="dl-tag">${t('dl_3mf_tag')}</span></a>`);
+  if (urls.split_plates_3mf) links.push(`<a class="dl-btn primary" href="${urls.split_plates_3mf}" download>${t('dl_split')} <span class="dl-tag">${t('dl_split_tag')}</span></a>`);
+  if (urls.stl) links.push(`<a class="dl-btn" href="${urls.stl}" download>${t('dl_stl')} <span class="dl-tag">${t('dl_stl_tag')}</span></a>`);
+  if (urls.step) links.push(`<a class="dl-btn" href="${urls.step}" download>${t('dl_step')} <span class="dl-tag">${t('dl_step_tag')}</span></a>`);
+  if (urls.cad_script) links.push(`<a class="dl-btn" href="${urls.cad_script}" download>${t('dl_py')} <span class="dl-tag">Python</span></a>`);
+  if (urls.gcode_3mf) links.push(`<a class="dl-btn primary" href="${urls.gcode_3mf}" download>${t('dl_gcode')} <span class="dl-tag">Sliced</span></a>`);
   for (const [k, u] of Object.entries(urls.per_color_stls || {})) {
     if (u) links.push(`<a class="dl-btn" href="${u}" download>${t('dl_part')(k)}</a>`);
   }
-  expBox.innerHTML = links.length ? links.join('') : `<span class="muted">${t('export_empty')}</span>`;
+
+  let dfmLines = '';
+  for (const c of d?.checks || []) {
+    dfmLines += `<div class="check-line ${c.status}"><strong>${c.name}:</strong> ${c.detail}</div>`;
+  }
+  for (const cd of d?.color_decisions || []) {
+    dfmLines += `<div class="choice-hint">• ${cd.source_hex} → ${t('slot_lbl')(cd.mapped_slot)} ${cd.mapped_name} (${cd.action}${cd.delta_e ? `, ΔE=${cd.delta_e}` : ''})</div>`;
+  }
+  if ((d?.split_parts || []).length > 1) {
+    for (const sp of d.split_parts) {
+      dfmLines += `<div class="choice-hint">• Plate ${sp.plate_index} [${t('slot_lbl')(sp.slot)}] ${sp.name} (${sp.bbox_mm.join('×')} mm · ${sp.joint_type})</div>`;
+    }
+  }
+
+  card.innerHTML = `
+    <div class="icard-head">
+      <div class="icard-title">${t('card_3d_title')}</div>
+      <div class="viewer-tabs">
+        <button type="button" class="vtab ${active3DTab === '3d' ? 'active' : ''}" data-vtab="3d">${t('tab_3d')}</button>
+        ${hasSplit ? `<button type="button" class="vtab ${active3DTab === 'split' ? 'active' : ''}" data-vtab="split">${t('tab_split')}</button>` : ''}
+        ${hasTT ? `<button type="button" class="vtab ${active3DTab === 'turntable' ? 'active' : ''}" data-vtab="turntable">${t('tab_tt')}</button>` : ''}
+      </div>
+    </div>
+    <div class="icard-body">
+      <div class="three-stage">
+        ${active3DTab === 'turntable'
+          ? `<img class="turntable-img js-zoom-tt" src="${urls.turntable_preview}?t=${Date.now()}" alt="4-Angle Sheet" />`
+          : `<div class="three-canvas js-three-mount"></div>
+             <div class="cam-toolbar">
+               <button type="button" class="cam-btn" data-cam="iso">${t('cam_iso')}</button>
+               <button type="button" class="cam-btn" data-cam="front">${t('cam_front')}</button>
+               <button type="button" class="cam-btn" data-cam="side">${t('cam_side')}</button>
+               <button type="button" class="cam-btn" data-cam="top">${t('cam_top')}</button>
+               <button type="button" class="cam-btn ${wireframeOn ? 'active' : ''} js-wire">${t('cam_wire')}</button>
+               <button type="button" class="cam-btn ${autoSpin ? 'active' : ''} js-spin">${t('cam_spin')}</button>
+             </div>
+             <div class="three-hud">
+               <span class="js-hud-dims">${d ? d.bbox_mm.join(' × ') + ' mm' : '-'}</span>
+               <span>·</span>
+               <span>${d ? `${d.effective_multicolor_mode} (${d.ams_slots_used} col)` : '3D'}</span>
+             </div>`}
+      </div>
+
+      ${d ? `
+        <div class="metrics-grid">
+          <div class="metric-box"><strong>${d.watertight ? t('wt_ok') : t('wt_warn')}</strong><span>${t('m_watertight')}</span></div>
+          <div class="metric-box"><strong>${exp.estimated_filament_g ?? d.estimated_mass_g} g</strong><span>${t('m_mass')}</span></div>
+          <div class="metric-box"><strong>${exp.estimated_flush_g ?? 0} g</strong><span>${t('m_flush')}</span></div>
+          <div class="metric-box"><strong>${exp.estimated_print_minutes ? Math.round(exp.estimated_print_minutes) + ' min' : '-'}</strong><span>${t('m_time')}</span></div>
+        </div>
+        <details class="dfm-details">
+          <summary>${t('dfm_toggle')}</summary>
+          <div class="dfm-list">${dfmLines}</div>
+        </details>
+      ` : ''}
+
+      <div class="export-grid">${links.join('')}</div>
+    </div>
+  `;
+
+  card.querySelectorAll('.vtab').forEach((b) => {
+    b.onclick = () => { active3DTab = b.dataset.vtab; renderStream(); };
+  });
+
+  const zoomTt = card.querySelector('.js-zoom-tt');
+  if (zoomTt) {
+    zoomTt.onclick = () => openLightbox(`${urls.turntable_preview}?t=${Date.now()}`, `${project.spec.title} — 4-Angle Sheet`);
+  }
+
+  const mountEl = card.querySelector('.js-three-mount');
+  if (mountEl) {
+    const glbUrl = active3DTab === 'split' ? (urls.split_preview_glb || urls.preview_glb) : urls.preview_glb;
+    requestAnimationFrame(() => {
+      mountInlineThree(mountEl, glbUrl, { dims: card.querySelector('.js-hud-dims') });
+    });
+    card.querySelectorAll('.cam-btn[data-cam]').forEach((b) => {
+      b.onclick = () => threeCtx?.setCam?.(b.dataset.cam);
+    });
+    card.querySelector('.js-wire').onclick = (e) => {
+      wireframeOn = !wireframeOn;
+      e.currentTarget.classList.toggle('active', wireframeOn);
+      threeCtx?.applyWire?.();
+    };
+    card.querySelector('.js-spin').onclick = (e) => {
+      autoSpin = !autoSpin;
+      e.currentTarget.classList.toggle('active', autoSpin);
+    };
+  }
+
+  return card;
 }
 
-function collectSpecFromUI() {
-  const fls = [];
-  document.querySelectorAll('#filamentList .fl-row').forEach((row, idx) => {
-    fls.push({
-      slot: idx + 1,
-      hex_color: row.querySelector('.fl-color').value.toUpperCase(),
-      name: row.querySelector('.fl-name').value || `Color ${idx + 1}`,
-      material: 'PLA',
-      role: idx === 0 ? 'main body' : `accent ${idx}`,
+function renderStream() {
+  if (!project) return;
+  destroyThree();
+  renderAttachedRefs();
+
+  const stream = $('chatStream');
+  stream.innerHTML = '';
+
+  const hasHistory = (project.history || []).length > 0;
+  const latestConcept = project.concepts?.[project.concepts.length - 1];
+  const has3D = Boolean(project.exports?.urls?.preview_glb || project.exports?.urls?.threemf);
+
+  if (!hasHistory && !latestConcept && !has3D) {
+    const hero = document.createElement('section');
+    hero.className = 'welcome-hero';
+    hero.innerHTML = `
+      <button type="button" class="lamp-orb-btn js-rub-lamp" title="Rub the Spool Lamp!">
+        <span class="lamp-ring"></span>
+        <span class="lamp-ring-inner"></span>
+        <span class="lamp-core">
+          <svg viewBox="0 0 24 24" width="34" height="34" fill="none" stroke="#1b1228" stroke-width="2" stroke-linecap="round">
+            <circle cx="10.5" cy="13.5" r="7"/><circle cx="10.5" cy="13.5" r="2.3"/>
+            <path d="M16.2 8.5 C18.5 6.8 18.8 5.1 17.6 3.8"/>
+            <path d="M18.2 1.8 L19.1 4.2 L21.5 5.1 L19.1 6 L18.2 8.4 L17.3 6 L14.9 5.1 L17.3 4.2 Z" fill="#fffdf0" stroke="none"/>
+          </svg>
+        </span>
+      </button>
+      <div class="lamp-whisper js-lamp-whisper">${t('lamp_whisper_idle')}</div>
+      <h1>${t('hero_title')}</h1>
+      <p>${t('hero_sub')}</p>
+      <div class="starter-grid">
+        ${t('starters').map((s, idx) => `
+          <button type="button" class="starter-card" data-sidx="${idx}">
+            <strong>${s.title}</strong>
+            <span>${s.desc}</span>
+          </button>
+        `).join('')}
+      </div>
+    `;
+    hero.querySelector('.js-rub-lamp').onclick = (e) => {
+      const rect = e.currentTarget.getBoundingClientRect();
+      spawnSparkles(rect.left + rect.width / 2, rect.top + rect.height / 2, 16);
+      const msgs = t('lamp_whispers');
+      hero.querySelector('.js-lamp-whisper').textContent = msgs[lampRubCount % msgs.length];
+      lampRubCount += 1;
+      $('chatInput').focus();
+    };
+    hero.querySelectorAll('.starter-card').forEach((btn) => {
+      btn.onclick = (e) => {
+        const rect = e.currentTarget.getBoundingClientRect();
+        spawnSparkles(rect.left + rect.width / 2, rect.top + rect.height / 2, 10);
+        sendMessage(t('starters')[Number(btn.dataset.sidx)].prompt);
+      };
     });
-  });
-  const activeAmsBtn = document.querySelector('.ams-pill.active');
-  return {
-    printer_id: $('printerSelect').value,
-    ams_units: activeAmsBtn ? Number(activeAmsBtn.dataset.ams) : 1,
-    multicolor_mode: $('multicolorModeSelect').value,
-    joint_type: $('jointTypeSelect').value,
-    dimensions: {
-      width_mm: Number($('dimW').value),
-      depth_mm: Number($('dimD').value),
-      height_mm: Number($('dimH').value),
-    },
-    filaments: fls.length ? fls : project.spec.filaments,
+    stream.appendChild(hero);
+    return;
+  }
+
+  for (const turn of project.history || []) {
+    const div = document.createElement('div');
+    div.className = `msg ${turn.role}`;
+    div.textContent = turn.content;
+    stream.appendChild(div);
+  }
+
+  if (latestConcept || isRendering2D || hasHistory) {
+    stream.appendChild(buildInlineSetupCard(project.spec, latestConcept));
+  }
+
+  if (isBuilding3D) {
+    const spin = document.createElement('div');
+    spin.className = 'magic-ritual-loader';
+    spin.innerHTML = `<div class="magic-orb-spin"></div><span>${t('building_3d_inline')}</span>`;
+    stream.appendChild(spin);
+  }
+
+  if (has3D && !isBuilding3D) {
+    stream.appendChild(buildInline3DExportCard());
+  }
+}
+
+function startBlankSanctuary() {
+  project = {
+    project_id: null,
+    history: [],
+    concepts: [],
+    references: [],
+    spec: null,
+    dfm: null,
+    exports: null,
   };
+  const sel = $('projectSwitcher');
+  if (sel) sel.value = '';
+  renderStream();
+  setStatus('');
+}
+
+async function ensureProject() {
+  if (project?.project_id) return project;
+  const r = await fetch('/api/projects', { method: 'POST' });
+  project = await r.json();
+  await refreshProjectList(project.project_id);
+  return project;
 }
 
 async function refreshProjectList(selectedId = null) {
@@ -541,71 +909,68 @@ async function refreshProjectList(selectedId = null) {
   const list = await r.json();
   const sel = $('projectSwitcher');
   sel.innerHTML = '';
+  const blankOpt = document.createElement('option');
+  blankOpt.value = '';
+  blankOpt.textContent = lang === 'en' ? '✨ New Wish Sanctuary…' : '✨ 许愿殿堂（新对话）…';
+  sel.appendChild(blankOpt);
   for (const item of list) {
     const opt = document.createElement('option');
     opt.value = item.project_id;
-    opt.textContent = `${item.title} (${item.project_id})`;
+    const shortTitle = (item.title || item.project_id).length > 18
+      ? `${item.title.slice(0, 17)}…`
+      : (item.title || item.project_id);
+    opt.textContent = shortTitle;
+    opt.title = `${item.title} (${item.project_id})`;
     sel.appendChild(opt);
   }
-  if (selectedId) sel.value = selectedId;
+  sel.value = selectedId || '';
   return list;
 }
 
 async function loadProject(projectId) {
+  if (!projectId) {
+    startBlankSanctuary();
+    return;
+  }
   const r = await fetch(`/api/projects/${projectId}`);
   project = await r.json();
-  renderProject();
-  // Show 2D concept if stage is concept_review (so user sees latest 2D render!), else 3D if built
-  if (project.stage === 'concept_review' && project.concepts?.length) {
-    switchView('2d');
-  } else if (project.exports?.urls?.preview_glb) {
-    switchView('3d');
-  } else {
-    switchView('2d');
-  }
-  setStatus(t('status_loaded')(project.spec.title));
+  active3DTab = project.exports?.urls?.split_preview_glb ? 'split' : '3d';
+  renderStream();
+  scrollChatBottom();
+  setStatus('');
 }
 
 async function createNewProject() {
-  const r = await fetch('/api/projects', { method: 'POST' });
-  project = await r.json();
-  await refreshProjectList(project.project_id);
-  renderProject();
-  switchView('2d');
-  setStatus(`已新建空白项目 ${project.project_id}`);
+  startBlankSanctuary();
 }
-
-let isSendingChat = false;
 
 async function sendMessage(text) {
   const clean = (text || '').trim();
-  if (!clean) return;
-  if (isSendingChat) return;
-
-  // Ensure a project exists even if user types before bootstrap finished
-  if (!project) {
-    await createNewProject();
-  }
+  if (!clean || isSendingChat) return;
+  await ensureProject();
 
   isSendingChat = true;
   $('sendBtn').disabled = true;
 
-  // 1. Optimistic immediate render so user NEVER feels the textbox froze or swallowed their text!
-  const log = $('chatLog');
-  const userDiv = document.createElement('div');
-  userDiv.className = 'msg user';
-  userDiv.textContent = clean;
-  log.appendChild(userDiv);
+  const btnRect = $('sendBtn').getBoundingClientRect();
+  spawnSparkles(btnRect.left + btnRect.width / 2, btnRect.top + btnRect.height / 2, 10);
 
-  const typingDiv = document.createElement('div');
-  typingDiv.className = 'msg assistant typing';
-  typingDiv.textContent = t('thinking_msg');
-  log.appendChild(typingDiv);
-  log.scrollTop = log.scrollHeight;
-  setStatus(t('thinking_msg'));
+  const stream = $('chatStream');
+  const hero = stream.querySelector('.welcome-hero');
+  if (hero) hero.remove();
+
+  const uDiv = document.createElement('div');
+  uDiv.className = 'msg user';
+  uDiv.textContent = clean;
+  stream.appendChild(uDiv);
+
+  const tDiv = document.createElement('div');
+  tDiv.className = 'msg assistant typing';
+  tDiv.textContent = t('thinking_msg');
+  stream.appendChild(tDiv);
+  scrollChatBottom();
 
   try {
-    // Step A: Fast text & spec response (~1-2s, never blocked by 20s SDXL generation!)
     const r = await fetch(`/api/projects/${project.project_id}/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -615,43 +980,124 @@ async function sendMessage(text) {
     const data = await r.json();
     project = data.project;
     await refreshProjectList(project.project_id);
-    renderProject();
 
-    // Unlock chat input immediately so user can read/keep chatting!
+    const want2d = $('auto2dCheck')?.checked ?? true;
     isSendingChat = false;
     $('sendBtn').disabled = false;
 
-    // Step B: Async 2D concept rendering if enabled (only shows spinner on center canvas, never locks chat!)
-    const want2d = $('auto2dCheck') ? $('auto2dCheck').checked : true;
     if (want2d) {
-      switchView('2d');
-      setStatus(t('rendering_2d_msg'));
-      $('busyOverlay').classList.remove('hidden');
-      $('busyTitle').textContent = lang === 'en' ? 'Rendering 2D Concept…' : '正在生成 2D 效果图…';
-      $('busySub').textContent = lang === 'en' ? 'Local GPU SDXL / Studio renderer (chat remains unlocked)' : '本地 GPU SDXL / 工作室引擎渲染中（可继续对话）';
+      isRendering2D = true;
+      renderStream();
+      scrollChatBottom();
       try {
         const r2 = await fetch(`/api/projects/${project.project_id}/render-2d`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({}),
         });
-        if (r2.ok) {
-          project = await r2.json();
-          renderProject();
-          switchView('2d');
-          setStatus(lang === 'en' ? '2D concept updated — confirm to build 3D print files.' : '2D 效果图已更新 — 满意后点右上角生成 3D 打印文件');
-        }
+        if (r2.ok) project = await r2.json();
       } finally {
-        $('busyOverlay').classList.add('hidden');
+        isRendering2D = false;
+        renderStream();
+        scrollChatBottom();
+        spawnSparkles(window.innerWidth / 2, window.innerHeight * 0.4, 12);
       }
+    } else {
+      renderStream();
+      scrollChatBottom();
     }
   } catch (err) {
-    typingDiv.className = 'msg error';
-    typingDiv.textContent = `Error: ${err.message || err}`;
+    tDiv.className = 'msg error';
+    tDiv.textContent = `Error: ${err.message || err}`;
     $('chatInput').value = clean;
-    setStatus(`Error: ${err.message || err}`);
     isSendingChat = false;
     $('sendBtn').disabled = false;
+  }
+}
+
+function renderMwQuickTags() {
+  const box = $('mwQuickTags');
+  if (!box) return;
+  const tags = ['WALL-E', 'Gridfinity', 'Headphone Stand', 'Skadis', 'Iron Man', 'Capybara'];
+  box.innerHTML = '';
+  for (const tag of tags) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'chip';
+    b.textContent = tag;
+    b.onclick = () => { $('mwQuery').value = tag; runMakerWorldSearch(tag); };
+    box.appendChild(b);
+  }
+}
+
+async function runMakerWorldSearch(q) {
+  const query = (q || '').trim();
+  if (!query) return;
+  $('mwResults').innerHTML = `<div class="choice-hint">${lang === 'en' ? 'Searching MakerWorld…' : '正在搜索 MakerWorld…'}</div>`;
+  try {
+    const r = await fetch(`/api/makerworld/search?q=${encodeURIComponent(query)}&limit=8`);
+    const items = await r.json();
+    $('mwResults').innerHTML = '';
+    for (const it of items) {
+      const card = document.createElement('div');
+      card.className = 'mw-card';
+      const thumb = it.thumbnail_url ? `<img class="mw-thumb" src="${it.thumbnail_url}" alt="" onerror="this.style.display='none'" />` : '';
+      card.innerHTML = `
+        ${thumb}
+        <div class="mw-body">
+          <a class="mw-title" href="${it.url}" target="_blank" rel="noopener" title="${it.title}">${it.title}</a>
+          <div class="mw-snip">${it.snippet || ''}</div>
+          <div class="mw-actions">
+            <a class="btn-link" href="${it.url}" target="_blank" rel="noopener">${t('open_mw_btn')}</a>
+            <button type="button" class="btn-link js-mw-use">${t('use_ref_btn')}</button>
+          </div>
+        </div>
+      `;
+      card.querySelector('.js-mw-use').onclick = async () => {
+        await ensureProject();
+        const resp = await fetch(`/api/projects/${project.project_id}/references/url`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: it.url }),
+        });
+        const data = await resp.json();
+        project = data.project;
+        renderAttachedRefs();
+        $('mwDrawerBackdrop').classList.add('hidden');
+        setStatus(lang === 'en' ? `Bound: ${it.title}` : `已绑定：${it.title}`);
+      };
+      $('mwResults').appendChild(card);
+    }
+  } catch (err) {
+    $('mwResults').innerHTML = `<div class="choice-hint">Error: ${err.message}</div>`;
+  }
+}
+
+async function uploadReferenceBlob(fileOrBlob, filename) {
+  await ensureProject();
+  setStatus(lang === 'en' ? `Analyzing ${filename}…` : `正在解析 ${filename}…`);
+  const fd = new FormData();
+  fd.append('file', fileOrBlob, filename);
+  const r = await fetch(`/api/projects/${project.project_id}/references/upload`, { method: 'POST', body: fd });
+  const data = await r.json();
+  project = data.project;
+  renderAttachedRefs();
+  setStatus(lang === 'en' ? `Attached ${filename}` : `已绑定参考 ${filename}`);
+}
+
+async function openMobileModal() {
+  $('mobileModal').classList.remove('hidden');
+  try {
+    const r = await fetch('/api/lan-info');
+    const info = await r.json();
+    const pill = $('lanStatusPill');
+    pill.textContent = info.lan_enabled ? t('lan_ok') : t('lan_local_only');
+    pill.classList.toggle('warn', !info.lan_enabled);
+    $('lanQrBox').innerHTML = info.qr_svg || '<div>QR unavailable</div>';
+    $('lanUrlInput').value = info.lan_url;
+    $('lanHintBox').textContent = info.lan_enabled ? t('lan_hint_ok')(info.primary_ip) : t('lan_hint_local')(info.cli_hint);
+  } catch (err) {
+    $('lanStatusPill').textContent = `Error: ${err.message || err}`;
   }
 }
 
@@ -660,249 +1106,32 @@ async function bootstrap() {
   meta = await r.json();
   const d = meta.doctor;
   const gpuShort = d.gpu_name ? d.gpu_name.replace('NVIDIA GeForce ', '').replace(' Laptop GPU', '') : d.accelerator;
-  $('hwBadge').textContent = `⚡ ${gpuShort} · ${d.recommended_llm || 'Fallback'}`;
+  $('hwBadge').textContent = `⚡ ${gpuShort}`;
 
-  // Printers
-  const ps = $('printerSelect');
-  ps.innerHTML = '';
-  for (const p of Object.values(meta.printers)) {
-    const opt = document.createElement('option');
-    opt.value = p.id;
-    opt.textContent = `${p.name} (${p.bed_x_mm}×${p.bed_y_mm}×${p.bed_z_mm})`;
-    ps.appendChild(opt);
-  }
-
-  // Bambu official PLA swatches
-  const sw = $('bambuSwatches');
-  sw.innerHTML = '';
-  for (const [name, hx] of Object.entries(meta.swatches || {})) {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.className = 'swatch-dot';
-    b.style.background = hx;
-    b.title = `${name} (${hx})`;
-    b.onclick = () => {
-      if (!project) return;
-      const fls = project.spec.filaments;
-      if (fls.length < 16) {
-        fls.push({ slot: fls.length + 1, name, hex_color: hx, material: 'PLA', role: `accent ${fls.length}` });
-        renderProject();
-      }
-    };
-    sw.appendChild(b);
-  }
-
-  // Bilingual UI init
+  applyTheme(theme);
   applyLang(lang);
 
-  // Open latest showcased project (e.g. live_walle_v2) immediately if available so user sees real 3D right away!
-  const existing = await refreshProjectList();
-  const preferred = existing.find((p) => p.project_id === 'live_walle_v2')
-    || existing.find((p) => p.project_id === 'demo_no_ams_stand')
-    || existing[0];
-  if (preferred) {
-    $('projectSwitcher').value = preferred.project_id;
-    await loadProject(preferred.project_id);
-  } else {
-    await createNewProject();
-  }
+  // Start on a clean Wish Lamp Sanctuary if user clicked fresh, or load latest project in switcher
+  await refreshProjectList();
+  await createNewProject();
 }
 
-// Event bindings
-$('newProjectBtn').onclick = createNewProject;
+$('newProjectBtn').onclick = (e) => {
+  const rect = e.currentTarget.getBoundingClientRect();
+  spawnSparkles(rect.left + rect.width / 2, rect.top + rect.height / 2, 10);
+  createNewProject();
+};
 $('projectSwitcher').onchange = (e) => loadProject(e.target.value);
+$('themeToggleBtn').onclick = () => applyTheme(theme === 'dark' ? 'light' : 'dark');
 $('langToggleBtn').onclick = () => applyLang(lang === 'zh' ? 'en' : 'zh');
-$('toggleInspectorBtn').onclick = () => {
-  const ws = document.querySelector('.workspace');
-  if (window.innerWidth <= 1020) {
-    ws.classList.toggle('inspector-open-overlay');
-  } else {
-    ws.classList.toggle('inspector-collapsed');
-  }
-};
 
-document.querySelectorAll('.left-tab').forEach((btn) => {
-  btn.onclick = () => {
-    document.querySelectorAll('.left-tab').forEach((b) => b.classList.toggle('active', b === btn));
-    document.querySelectorAll('.left-panel').forEach((p) => p.classList.toggle('active', p.id === `panel-${btn.dataset.panel}`));
-  };
+const openMw = () => $('mwDrawerBackdrop').classList.remove('hidden');
+$('openMwDrawerBtn').onclick = openMw;
+$('composerMwBtn').onclick = openMw;
+$('closeMwDrawerBtn').onclick = () => $('mwDrawerBackdrop').classList.add('hidden');
+$('mwDrawerBackdrop').addEventListener('click', (e) => {
+  if (e.target === $('mwDrawerBackdrop')) $('mwDrawerBackdrop').classList.add('hidden');
 });
-
-document.querySelectorAll('.vpill').forEach((el) => {
-  el.onclick = () => switchView(el.dataset.view);
-});
-
-document.querySelectorAll('.cam-btn[data-cam]').forEach((btn) => {
-  btn.onclick = () => setCameraPreset(btn.dataset.cam);
-});
-$('wireframeBtn').onclick = () => {
-  wireframeOn = !wireframeOn;
-  $('wireframeBtn').classList.toggle('active', wireframeOn);
-  applyWireframe();
-};
-$('spinBtn').onclick = () => {
-  autoSpin = !autoSpin;
-  $('spinBtn').classList.toggle('active', autoSpin);
-};
-
-document.querySelectorAll('.ams-pill').forEach((btn) => {
-  btn.onclick = () => {
-    const n = Number(btn.dataset.ams);
-    updateAmsPills(n);
-    if (n === 0 && $('multicolorModeSelect').value === 'ams') {
-      $('multicolorModeSelect').value = 'split_no_ams';
-    }
-  };
-});
-
-// Quick chips are bound dynamically inside renderQuickChips()
-
-function submitChatFromInput() {
-  const el = $('chatInput');
-  const text = el.value.trim();
-  if (!text || isSendingChat) return;
-  el.value = '';
-  sendMessage(text);
-}
-
-$('chatForm').addEventListener('submit', (e) => {
-  e.preventDefault();
-  submitChatFromInput();
-});
-
-$('chatInput').addEventListener('keydown', (e) => {
-  // Never hijack Enter during Chinese/Japanese/Korean IME composition!
-  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && e.keyCode !== 229) {
-    e.preventDefault();
-    submitChatFromInput();
-  }
-});
-
-// Allow Ctrl+V pasting a MakerWorld screenshot straight into the chat input!
-$('chatInput').addEventListener('paste', async (e) => {
-  const items = e.clipboardData?.items || [];
-  for (const item of items) {
-    if (item.type && item.type.startsWith('image/')) {
-      e.preventDefault();
-      const blob = item.getAsFile();
-      if (blob && project) {
-        await uploadReferenceBlob(blob, `pasted_ref_${Date.now()}.png`);
-      }
-      return;
-    }
-  }
-});
-
-$('addColorBtn').onclick = () => {
-  if (!project || project.spec.filaments.length >= 16) return;
-  const defaults = ['#1E4C8A', '#F2EFE9', '#4D9A4E', '#F4D03F', '#C9302C', '#A28BC7'];
-  const nextSlot = project.spec.filaments.length + 1;
-  project.spec.filaments.push({
-    slot: nextSlot,
-    name: `AMS Color ${nextSlot}`,
-    hex_color: defaults[(nextSlot - 1) % defaults.length],
-    material: 'PLA',
-    role: `accent ${nextSlot}`,
-  });
-  renderProject();
-};
-
-$('filamentList').onclick = (e) => {
-  if (!e.target.classList.contains('fl-del')) return;
-  const idx = Number(e.target.dataset.idx);
-  if (project.spec.filaments.length > 1) {
-    project.spec.filaments.splice(idx, 1);
-    project.spec.filaments.forEach((f, i) => (f.slot = i + 1));
-    renderProject();
-  }
-};
-
-$('applySpecBtn').onclick = async () => {
-  setBusy(true, '正在更新规格与 2D 概念图…', '应用最新尺寸、AMS 数量与耗材色盘');
-  try {
-    const patch = collectSpecFromUI();
-    const r = await fetch(`/api/projects/${project.project_id}/spec`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ patch, re_render_2d: true }),
-    });
-    project = await r.json();
-    renderProject();
-    switchView('2d');
-    setStatus('规格与 2D 概念图已刷新');
-  } finally {
-    setBusy(false);
-  }
-};
-
-$('confirmBuildBtn').onclick = async () => {
-  if (!project) return;
-  setBusy(true, '正在生成 3D 模型、水密修复与 .3MF 打包…', 'CAD / Hunyuan3D-2 + 布尔功能雕刻 + AMS 颜色映射');
-  try {
-    const patch = collectSpecFromUI();
-    await fetch(`/api/projects/${project.project_id}/spec`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ patch, re_render_2d: false }),
-    });
-    const r = await fetch(`/api/projects/${project.project_id}/confirm-build`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ run_slicer: true }),
-    });
-    project = await r.json();
-    await refreshProjectList(project.project_id);
-    renderProject();
-    switchView(project.exports?.urls?.split_preview_glb ? 'split' : '3d');
-    setStatus('生成完成！可直接在画布旋转检查或在右侧下载 .3MF / .STL / .STEP');
-  } finally {
-    setBusy(false);
-  }
-};
-
-async function runMakerWorldSearch(q) {
-  const query = (q || '').trim();
-  if (!query) return;
-  $('mwResults').innerHTML = `<div class="muted">${lang === 'en' ? 'Searching MakerWorld…' : '正在搜索 MakerWorld 模型…'}</div>`;
-  try {
-    const r = await fetch(`/api/makerworld/search?q=${encodeURIComponent(query)}&limit=8`);
-    const items = await r.json();
-    $('mwResults').innerHTML = '';
-    for (const it of items) {
-      const card = document.createElement('div');
-      card.className = 'mw-card';
-      const thumbHtml = it.thumbnail_url ? `<img class="mw-thumb" src="${it.thumbnail_url}" alt="" onerror="this.style.display='none'" />` : '';
-      card.innerHTML = `
-        ${thumbHtml}
-        <div class="mw-body">
-          <a class="mw-title" href="${it.url}" target="_blank" rel="noopener" title="${it.title}">${it.title}</a>
-          <div class="mw-snip">${it.snippet || ''}</div>
-          <div class="mw-actions">
-            <a class="btn-link" href="${it.url}" target="_blank" rel="noopener">${t('open_mw_btn')} ↗</a>
-            <button type="button" class="btn-link mw-use-btn">${t('use_ref_btn')}</button>
-          </div>
-        </div>
-      `;
-      card.querySelector('.mw-use-btn').onclick = async () => {
-        if (!project) await createNewProject();
-        const resp = await fetch(`/api/projects/${project.project_id}/references/url`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url: it.url }),
-        });
-        const data = await resp.json();
-        project = data.project;
-        renderProject();
-        document.querySelector('.left-tab[data-panel="chat"]').click();
-        setStatus(lang === 'en' ? `Attached MakerWorld reference: ${it.title}` : `已引用 MakerWorld 参考：${it.title}`);
-      };
-      $('mwResults').appendChild(card);
-    }
-  } catch (err) {
-    $('mwResults').innerHTML = `<div class="muted">Search error: ${err.message}</div>`;
-  }
-}
-
 $('mwSearchBtn').onclick = () => runMakerWorldSearch($('mwQuery').value);
 $('mwQuery').addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) {
@@ -910,11 +1139,10 @@ $('mwQuery').addEventListener('keydown', (e) => {
     runMakerWorldSearch($('mwQuery').value);
   }
 });
-
 $('mwUrlBtn').onclick = async () => {
   const url = $('mwUrlInput').value.trim();
   if (!url) return;
-  if (!project) await createNewProject();
+  await ensureProject();
   const r = await fetch(`/api/projects/${project.project_id}/references/url`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -923,66 +1151,9 @@ $('mwUrlBtn').onclick = async () => {
   const data = await r.json();
   project = data.project;
   $('mwUrlInput').value = '';
-  renderProject();
-  setStatus(lang === 'en' ? `Imported URL reference: ${data.reference.title}` : `已导入参考链接：${data.reference.title}`);
+  renderAttachedRefs();
+  setStatus(lang === 'en' ? `Imported ${data.reference.title}` : `已导入 ${data.reference.title}`);
 };
-
-async function uploadReferenceBlob(fileOrBlob, filename) {
-  if (!project) await createNewProject();
-  setBusy(true, lang === 'en' ? `Analyzing reference ${filename}…` : `正在解析参考文件 ${filename}…`, 'VLM + K-Means AMS Palette');
-  try {
-    const fd = new FormData();
-    fd.append('file', fileOrBlob, filename);
-    const r = await fetch(`/api/projects/${project.project_id}/references/upload`, { method: 'POST', body: fd });
-    const data = await r.json();
-    project = data.project;
-    renderProject();
-    setStatus(lang === 'en' ? `Extracted reference palette from ${filename}` : `已从 ${filename} 提取参考色盘与特征`);
-  } finally {
-    setBusy(false);
-  }
-}
-
-$('refUpload').onchange = async (e) => {
-  const file = e.target.files?.[0];
-  if (!file) return;
-  await uploadReferenceBlob(file, file.name);
-  e.target.value = '';
-};
-
-function setMobileTab(tab) {
-  document.body.classList.remove('mtab-chat', 'mtab-canvas', 'mtab-makerworld', 'mtab-specs');
-  document.body.classList.add(`mtab-${tab}`);
-  document.querySelectorAll('.mnav-btn').forEach((b) => {
-    b.classList.toggle('active', b.dataset.mtab === tab);
-  });
-  if (tab === 'chat' || tab === 'makerworld') {
-    document.querySelectorAll('.left-tab').forEach((b) => b.classList.toggle('active', b.dataset.panel === tab));
-    document.querySelectorAll('.left-panel').forEach((p) => p.classList.toggle('active', p.id === `panel-${tab}`));
-  }
-  if (tab === 'canvas') {
-    setTimeout(() => window.dispatchEvent(new Event('resize')), 50);
-  }
-}
-
-async function openMobileModal() {
-  const modal = $('mobileModal');
-  modal.classList.remove('hidden');
-  try {
-    const r = await fetch('/api/lan-info');
-    const info = await r.json();
-    const pill = $('lanStatusPill');
-    pill.textContent = info.lan_enabled ? t('lan_ok') : t('lan_local_only');
-    pill.classList.toggle('warn', !info.lan_enabled);
-    $('lanQrBox').innerHTML = info.qr_svg || '<div class="muted">QR unavailable</div>';
-    $('lanUrlInput').value = info.lan_url;
-    $('lanHintBox').textContent = info.lan_enabled
-      ? t('lan_hint_ok')(info.primary_ip)
-      : t('lan_hint_local')(info.cli_hint);
-  } catch (err) {
-    $('lanStatusPill').textContent = `Error: ${err.message || err}`;
-  }
-}
 
 $('mobilePairBtn').onclick = openMobileModal;
 $('closeMobileModalBtn').onclick = () => $('mobileModal').classList.add('hidden');
@@ -1001,11 +1172,49 @@ $('copyLanUrlBtn').onclick = async () => {
   }
 };
 
-document.querySelectorAll('.mnav-btn').forEach((btn) => {
-  btn.onclick = () => setMobileTab(btn.dataset.mtab);
+$('closeLightboxBtn').onclick = () => $('lightboxModal').classList.add('hidden');
+$('lightboxModal').addEventListener('click', (e) => {
+  if (e.target === $('lightboxModal')) $('lightboxModal').classList.add('hidden');
 });
 
-setMobileTab('chat');
+function submitFromBox() {
+  const el = $('chatInput');
+  const txt = el.value.trim();
+  if (!txt || isSendingChat) return;
+  el.value = '';
+  el.style.height = 'auto';
+  sendMessage(txt);
+}
+
+$('chatForm').addEventListener('submit', (e) => { e.preventDefault(); submitFromBox(); });
+$('chatInput').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && e.keyCode !== 229) {
+    e.preventDefault();
+    submitFromBox();
+  }
+});
+$('chatInput').addEventListener('input', (e) => {
+  e.target.style.height = 'auto';
+  e.target.style.height = `${Math.min(e.target.scrollHeight, 140)}px`;
+});
+$('chatInput').addEventListener('paste', async (e) => {
+  const items = e.clipboardData?.items || [];
+  for (const item of items) {
+    if (item.type && item.type.startsWith('image/')) {
+      e.preventDefault();
+      const blob = item.getAsFile();
+      if (blob) await uploadReferenceBlob(blob, `pasted_ref_${Date.now()}.png`);
+      return;
+    }
+  }
+});
+$('refUpload').onchange = async (e) => {
+  const file = e.target.files?.[0];
+  if (!file) return;
+  await uploadReferenceBlob(file, file.name);
+  e.target.value = '';
+};
+
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('/sw.js').catch(() => {});
 }

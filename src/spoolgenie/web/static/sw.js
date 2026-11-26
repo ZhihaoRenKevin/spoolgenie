@@ -1,4 +1,4 @@
-const CACHE_NAME = 'spoolgenie-shell-v7';
+const CACHE_NAME = 'spoolgenie-shell-v10';
 const SHELL_URLS = ['/', '/manifest.json', '/icon.svg'];
 
 self.addEventListener('install', (event) => {

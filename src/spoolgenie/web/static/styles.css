@@ -758,6 +758,12 @@ body {
 }
 .pcheck.warn { border-left-color: var(--warn); }
 .pcheck.fail { border-left-color: var(--danger); }
+.remedy-list { display: flex; flex-direction: column; gap: 4px; }
+.remedy-pill {
+  font-size: 11px; line-height: 1.45; padding: 6px 9px; border-radius: 8px;
+  background: linear-gradient(135deg, var(--bambu-soft), var(--accent-soft));
+  border: 1px solid rgba(0, 198, 122, 0.35); color: var(--text); font-weight: 600;
+}
 @media (max-width: 768px) {
   .physics-kpis { grid-template-columns: repeat(2, 1fr); }
 }

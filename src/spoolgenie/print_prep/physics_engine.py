@@ -461,5 +461,213 @@ def evaluate_physics_stability(
         tip_deflection_mm=round(deflection_mm, 3),
         stability_score=score,
         overall_verdict=overall,
+        recommended_wall_loops=wall_loops,
+        recommended_infill_pct=int(round(infill_ratio * 100.0)),
+        recommended_material=(
+            "ASA" if load_case.heat_source_c >= 62.0 else ("PETG" if hdt_margin < 10.0 else None)
+        ),
+        auto_remediations=[],
         checks=checks,
     )
+
+
+def _pick_base_plinth_slot(filaments: list) -> int:
+    """Choose a clean dark/base filament slot for an auto-synthesized stability plinth."""
+    if not filaments:
+        return 1
+    base_kws = ("base", "plinth", "stand", "tread", "charcoal", "black", "gray", "grey", "dark", "joint")
+    best_slot = filaments[-1].slot
+    best_score = -1
+    for fl in filaments:
+        txt = f"{fl.role} {fl.name}".lower()
+        sc = sum(2 for kw in base_kws if kw in txt)
+        if sc > best_score:
+            best_score = sc
+            best_slot = fl.slot
+    return best_slot
+
+
+def optimize_assembly_with_physics(
+    parts: list[PrintPart],
+    spec: DesignSpec,
+    filaments: list | None = None,
+    auto_stabilize: bool = True,
+) -> tuple[list[PrintPart], PhysicsStabilityReport]:
+    """Closed-loop physics-guided structural auto-optimizer for 3D-printable assemblies.
+
+    Executes an automated Diagnose -> Remediate -> Re-Verify loop:
+      1. Evaluates baseline anisotropic FDM mechanics, base closure, tipping angle & pull-off force.
+      2. If base is unclosed/narrow OR loaded tipping angle < 16 deg OR tipping force < 0.85 * F_lat:
+         computes the exact eccentric counter-balanced beveled `stability_plinth` (flat Z=0) shifted
+         toward the loaded CoM, boolean-trims it flush against existing parts via `manifold3d`,
+         and re-evaluates to verify measurable Before -> After stability improvement!
+      3. Computes adaptive FDM slicer parameters (`wall_loops`, `sparse_infill_density`, thermal
+         material recommendation) tailored to neck `FOS_z`, payload mass, and coil HDT margin.
+    """
+    current_parts = [PrintPart(name=p.name, slot=p.slot, mesh=p.mesh.copy(), joint_type=p.joint_type, plate_index=p.plate_index) for p in parts]
+    active_fls = list(filaments if filaments is not None else spec.filaments)
+    before = evaluate_physics_stability(current_parts, spec)
+    remediations: list[str] = []
+
+    combined_before = trimesh.util.concatenate([p.mesh for p in current_parts]) if len(current_parts) > 1 else current_parts[0].mesh
+    bmin, bmax = combined_before.bounds
+    ext = bmax - bmin
+    bbox_mm = (float(ext[0]), float(ext[1]), float(ext[2]))
+    load_case = infer_application_load_case(spec, bbox_mm)
+
+    needs_plinth = (
+        auto_stabilize
+        and not any("plinth" in p.name.lower() for p in current_parts)
+        and (
+            (not before.base_closed_solid)
+            or (before.tilt_angle_loaded_deg < 16.0)
+            or (before.tipping_force_n < load_case.lateral_force_n * 0.85 and load_case.payload_mass_g > 0)
+        )
+    )
+
+    if needs_plinth:
+        try:
+            import manifold3d
+
+            from spoolgenie.print_prep.functional_carver import _manifold_to_mesh, _mesh_to_manifold
+
+            cx_box = 0.5 * float(bmin[0] + bmax[0])
+            cy_box = 0.5 * float(bmin[1] + bmax[1])
+            cm_x, cm_y, z_cm = before.center_of_mass_mm
+
+            # Exact minimum counter-balanced plinth radii targeting >= 22 deg loaded tilt & >= 1.15x lateral force!
+            total_mass_kg = max(0.02, (before.self_mass_g + load_case.payload_mass_g) / 1000.0)
+            z_force_arm = max(12.0, bbox_mm[2] * load_case.payload_z_ratio)
+            req_margin_tilt = z_cm * math.tan(math.radians(23.0))
+            req_margin_force = (load_case.lateral_force_n * 1.15 * z_force_arm) / max(total_mass_kg * G_ACCEL, 0.25)
+            req_r = max(24.0, req_margin_tilt, min(req_margin_force, max(bbox_mm[0], bbox_mm[1]) * 0.82))
+
+            # Center plinth slightly toward loaded CoM eccentricity so it specifically opposes forward/rear tipping!
+            px = cx_box + np.clip((cm_x - cx_box) * 0.65, -bbox_mm[0] * 0.22, bbox_mm[0] * 0.22)
+            py = cy_box + np.clip((cm_y - cy_box) * 0.65, -bbox_mm[1] * 0.28, bbox_mm[1] * 0.28)
+            rx = max(bbox_mm[0] * 0.54, req_r, 24.0)
+            ry = max(bbox_mm[1] * 0.54, req_r, 24.0)
+            # Keep plinth sleek & visually proportional (<= 1.65x footprint span, <= 190mm bed safety)
+            rx = min(rx, max(bbox_mm[0] * 0.85, 42.0), 92.0)
+            ry = min(ry, max(bbox_mm[1] * 0.88, 42.0), 92.0)
+            plinth_h = 5.5
+            seat_embed = 1.2
+
+            plinth_man = (
+                manifold3d.Manifold.cylinder(plinth_h, rx, rx * 0.94, circular_segments=56)
+                .scale([1.0, ry / rx, 1.0])
+                .translate([float(px), float(py), 0.0])
+            )
+
+            # Seat all existing parts into top of plinth by 1.2 mm
+            lift_z = plinth_h - seat_embed
+            plinth_slot = _pick_base_plinth_slot(active_fls)
+            cand_parts: list[PrintPart] = []
+            part_mans: list[manifold3d.Manifold] = []
+            same_slot_base_idx: int | None = None
+
+            for idx_p, p in enumerate(current_parts):
+                m_lifted = p.mesh.copy()
+                m_lifted.apply_translation([0.0, 0.0, lift_z])
+                cand_parts.append(
+                    PrintPart(
+                        name=p.name,
+                        slot=p.slot,
+                        mesh=m_lifted,
+                        joint_type=p.joint_type,
+                        plate_index=p.plate_index,
+                    )
+                )
+                try:
+                    pm = _mesh_to_manifold(m_lifted)
+                    part_mans.append(pm)
+                    # If an existing ground-touching part already uses the exact same base color slot,
+                    # boolean-union the plinth directly into it to prevent coplanar same-slot seams!
+                    if (
+                        same_slot_base_idx is None
+                        and p.slot == plinth_slot
+                        and float(p.mesh.bounds[0][2]) <= float(bmin[2]) + 3.0
+                    ):
+                        same_slot_base_idx = idx_p
+                except Exception:
+                    part_mans.append(manifold3d.Manifold())
+
+            built_ok = False
+            if same_slot_base_idx is not None and part_mans[same_slot_base_idx].num_tri() > 0:
+                merged_man = part_mans[same_slot_base_idx] + plinth_man
+                for idx_other, om in enumerate(part_mans):
+                    if idx_other != same_slot_base_idx and om.num_tri() > 0:
+                        merged_man = merged_man - om
+                merged_mesh = _manifold_to_mesh(merged_man)
+                if merged_mesh.is_watertight and len(merged_mesh.faces) > 24:
+                    cand_parts[same_slot_base_idx].mesh = merged_mesh
+                    built_ok = True
+            else:
+                plinth_clean = plinth_man
+                for pm in part_mans:
+                    if pm.num_tri() > 0:
+                        plinth_clean = plinth_clean - pm
+                if plinth_clean.num_tri() > 24:
+                    plinth_mesh = _manifold_to_mesh(plinth_clean)
+                    if plinth_mesh.is_watertight:
+                        cand_parts.append(PrintPart(name="stability_plinth", slot=plinth_slot, mesh=plinth_mesh))
+                        built_ok = True
+
+            if built_ok:
+                min_z_all = min(float(cp.mesh.bounds[0][2]) for cp in cand_parts)
+                if abs(min_z_all) > 1e-4:
+                    for cp in cand_parts:
+                        cp.mesh.apply_translation([0.0, 0.0, -min_z_all])
+
+                after_plinth = evaluate_physics_stability(cand_parts, spec)
+                improved = (
+                    all(cp.mesh.is_watertight for cp in cand_parts)
+                    and (
+                        after_plinth.stability_score > before.stability_score
+                        or after_plinth.tilt_angle_loaded_deg > before.tilt_angle_loaded_deg + 2.5
+                        or (after_plinth.base_closed_solid and not before.base_closed_solid)
+                    )
+                )
+                if improved:
+                    current_parts = cand_parts
+                    remediations.append(
+                        f"Auto-added counter-balanced stability_plinth ({rx*2:.0f}×{ry*2:.0f}×{plinth_h:.1f} mm): "
+                        f"θ_tip {before.tilt_angle_loaded_deg:.1f}° → {after_plinth.tilt_angle_loaded_deg:.1f}°, "
+                        f"F_tip {before.tipping_force_n:.2f}N → {after_plinth.tipping_force_n:.2f}N, "
+                        f"score {before.stability_score} → {after_plinth.stability_score}"
+                    )
+        except Exception:
+            pass
+
+    # Adaptive FDM slicer wall loops & gyroid infill optimization written directly into Bambu .3mf!
+    mid = evaluate_physics_stability(current_parts, spec)
+    rec_walls = 3
+    rec_infill_pct = 15
+    if mid.safety_factor_z < 2.2:
+        rec_walls = 5
+        rec_infill_pct = 35
+    elif mid.safety_factor_z < 4.5 or load_case.payload_mass_g >= 200.0:
+        rec_walls = 4
+        rec_infill_pct = 25
+    elif mid.tilt_angle_loaded_deg < 16.0:
+        rec_infill_pct = 30
+
+    if rec_walls > 3 or rec_infill_pct > 15:
+        remediations.append(
+            f"Adaptive FDM slicer reinforcement written to .3mf: {rec_walls} wall loops + {rec_infill_pct}% gyroid infill "
+            f"(tuned for {load_case.name})."
+        )
+
+    final_report = evaluate_physics_stability(
+        current_parts,
+        spec,
+        infill_ratio=rec_infill_pct / 100.0,
+        wall_loops=rec_walls,
+    )
+    if final_report.recommended_material:
+        remediations.append(
+            f"Thermal HDT guard: recommended {final_report.recommended_material} over {final_report.material_code} "
+            f"(HDT {final_report.hdt_c:.0f}°C vs {load_case.heat_source_c:.0f}°C load)."
+        )
+    final_report.auto_remediations = remediations
+    return current_parts, final_report

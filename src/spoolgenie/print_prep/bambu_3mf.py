@@ -98,18 +98,25 @@ ROOT_RELS_XML = """<?xml version="1.0" encoding="UTF-8"?>
 """
 
 
-def _build_project_settings_json(filaments: list[FilamentSlot]) -> str:
+def _build_project_settings_json(
+    filaments: list[FilamentSlot],
+    wall_loops: int = 3,
+    sparse_infill_density: str = "15%",
+    material_override: str | None = None,
+) -> str:
     cols = [f.hex_color.upper() for f in filaments] or ["#2B2D30"]
-    types = [f.material.upper() for f in filaments] or ["PLA"]
+    types = [
+        (material_override.upper() if material_override else f.material.upper()) for f in filaments
+    ] or [(material_override.upper() if material_override else "PLA")]
     payload = {
         "from": "SpoolGenie",
         "filament_colour": cols,
         "filament_type": types,
         "filament_settings_id": [f"Bambu {t} Basic" for t in types],
         "layer_height": "0.2",
-        "sparse_infill_density": "15%",
+        "sparse_infill_density": sparse_infill_density,
         "sparse_infill_pattern": "gyroid",
-        "wall_loops": "3",
+        "wall_loops": str(max(2, int(wall_loops))),
         "enable_prime_tower": "1" if len(cols) > 1 else "0",
     }
     return json.dumps(payload, indent=2)
@@ -121,6 +128,8 @@ def export_multipart_bambu_3mf(
     output_path: str | Path,
     model_title: str = "SpoolGenie Assembly",
     as_separate_objects: bool = False,
+    wall_loops: int = 3,
+    sparse_infill_density: str = "15%",
 ) -> Path:
     """Export multi-body Bambu Studio / OrcaSlicer .3mf with exact per-part AMS extruder assignments.
 
@@ -221,7 +230,14 @@ def export_multipart_bambu_3mf(
         zf.writestr("_rels/.rels", ROOT_RELS_XML)
         zf.writestr("3D/3dmodel.model", model_xml)
         zf.writestr("Metadata/model_settings.config", model_settings_xml)
-        zf.writestr("Metadata/project_settings.config", _build_project_settings_json(filaments))
+        zf.writestr(
+            "Metadata/project_settings.config",
+            _build_project_settings_json(
+                filaments,
+                wall_loops=wall_loops,
+                sparse_infill_density=sparse_infill_density,
+            ),
+        )
 
     return out
 
@@ -232,6 +248,8 @@ def export_painted_bambu_3mf(
     filaments: list[FilamentSlot],
     output_path: str | Path,
     model_title: str = "SpoolGenie Painted Model",
+    wall_loops: int = 3,
+    sparse_infill_density: str = "15%",
 ) -> Path:
     """Export a single watertight manifold mesh with native Bambu Studio per-triangle `paint_color` tags."""
     out = Path(output_path)
@@ -280,7 +298,14 @@ def export_painted_bambu_3mf(
         zf.writestr("_rels/.rels", ROOT_RELS_XML)
         zf.writestr("3D/3dmodel.model", model_xml)
         zf.writestr("Metadata/model_settings.config", model_settings_xml)
-        zf.writestr("Metadata/project_settings.config", _build_project_settings_json(filaments))
+        zf.writestr(
+            "Metadata/project_settings.config",
+            _build_project_settings_json(
+                filaments,
+                wall_loops=wall_loops,
+                sparse_infill_density=sparse_infill_density,
+            ),
+        )
 
     return out
 

@@ -939,7 +939,13 @@ function buildInline3DExportCard() {
             </div>
             <div class="choice-hint">
               ${d.physics.material_name} (E=${d.physics.youngs_modulus_gpa} GPa · σ_z=${d.physics.tensile_z_mpa} MPa · HDT ${d.physics.hdt_c}°C) · ${lang === 'zh' ? d.physics.load_scenario_zh : d.physics.load_scenario}
+              · 3MF: ${d.physics.recommended_wall_loops || 3} ${lang === 'zh' ? '层壁厚' : 'walls'} / ${d.physics.recommended_infill_pct || 15}% ${lang === 'zh' ? '填充' : 'infill'}${d.physics.recommended_material ? ` · 🔥 ${lang === 'zh' ? '建议改用' : 'Rec.'} ${d.physics.recommended_material}` : ''}
             </div>
+            ${(d.physics.auto_remediations || []).length ? `
+              <div class="remedy-list">
+                ${d.physics.auto_remediations.map((rm) => `<div class="remedy-pill">✨ ${lang === 'zh' ? '闭环力学自动优化：' : 'Auto-Optimized: '}${rm}</div>`).join('')}
+              </div>
+            ` : ''}
             <div class="physics-kpis">
               <div class="pkpi"><strong>${d.physics.tilt_angle_loaded_deg}°</strong><span>${t('pk_tilt')}</span></div>
               <div class="pkpi"><strong>${d.physics.tipping_force_n} N</strong><span>${t('pk_ftip')}</span></div>

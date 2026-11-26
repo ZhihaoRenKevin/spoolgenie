@@ -124,9 +124,23 @@ def render_shaded_mesh_preview(
             except Exception:
                 pass
 
-        # Mild subsample only for ultra-dense meshes (>32k faces per part)
-        step = max(1, len(f_arr) // 28000)
-        f_use = f_arr[::step]
+        # Never drop faces via naive striding (creates pinholes!). Use contiguous QEM decimation for ultra-dense parts.
+        if len(f_arr) > 36000 and importlib.util.find_spec("pymeshlab"):
+            try:
+                import pymeshlab
+
+                ms_q = pymeshlab.MeshSet()
+                ms_q.add_mesh(pymeshlab.Mesh(v_arr, f_arr))
+                ms_q.meshing_decimation_quadric_edge_collapse(
+                    targetfacenum=24000, preserveboundary=True, preservenormal=True
+                )
+                mq = ms_q.current_mesh()
+                if mq.face_number() > 100:
+                    v_arr = np.asarray(mq.vertex_matrix(), dtype=np.float64)
+                    f_arr = np.asarray(mq.face_matrix(), dtype=np.int64)
+            except Exception:
+                pass
+        f_use = f_arr
         v_rot = (v_arr - center) @ rot.T
         tri_v = v_rot[f_use]  # (N, 3, 3)
 

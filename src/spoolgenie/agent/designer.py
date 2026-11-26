@@ -201,16 +201,32 @@ class ConversationalDesigner:
             )
         )
 
-        for field in ("title", "summary", "prompt_2d"):
+        for field in ("title", "summary"):
             if raw.get(field):
                 data[field] = str(raw[field])
+        # Preserve curated character prompt_2d so SDXL never loses iconic visual details (e.g. tangerine on head!)
+        if raw.get("prompt_2d") and not is_char_base:
+            data["prompt_2d"] = str(raw["prompt_2d"])
         # Keep character category ID intact when character preset matched so we never fall back to a generic template!
         if raw.get("category") and not is_char_base:
             data["category"] = str(raw["category"])
 
         route_val = str(raw.get("route", "")).lower()
+        low_msg = user_message.lower()
+        user_asked_utility = any(
+            k in low_msg
+            for k in (
+                "功能", "实用", "支架", "笔筒", "收纳", "充电", "magsafe", "磁吸",
+                "理线", "挂钩", "花盆", "钥匙扣", "底座", "functional", "holder",
+                "stand", "organizer", "charger", "planter", "keychain", "utility", "dock",
+            )
+        )
+        # Never let LLM silently turn a pure figurine ("摆件/手办") into a hybrid pen caddy or MagSafe charger!
         if route_val in ("cad", "mesh", "hybrid"):
-            data["route"] = route_val
+            if is_char_base and base.route == EngineRoute.MESH and route_val == "hybrid" and not user_asked_utility:
+                data["route"] = "mesh"
+            else:
+                data["route"] = route_val
 
         if isinstance(raw.get("dimensions"), dict):
             dims = dict(data["dimensions"])
@@ -250,16 +266,24 @@ class ConversationalDesigner:
                 data["filaments"] = cleaned
 
         valid_ops = {"hollow_cavity", "phone_slot", "magsafe_recess", "magnet_sockets", "cable_comb", "plinth_base", "keychain_loop"}
-        if isinstance(raw.get("functional_ops"), list):
+        if isinstance(raw.get("functional_ops"), list) and (data.get("route") == "hybrid" or user_asked_utility):
             parsed_ops: list[dict[str, Any]] = []
+            seen_ops: set[str] = set()
             for item in raw["functional_ops"]:
-                if isinstance(item, dict) and item.get("op") in valid_ops:
+                if isinstance(item, dict) and item.get("op") in valid_ops and item["op"] not in seen_ops:
+                    # Only accept ops that align with baseline heuristic ops or explicit utility request
+                    seen_ops.add(item["op"])
                     parsed_ops.append({"op": item["op"], "params": item.get("params") or {}})
-            if parsed_ops:
-                data["functional_ops"] = parsed_ops
+            if parsed_ops and (not base.functional_ops):
+                data["functional_ops"] = parsed_ops[:2]
+        elif is_char_base and data.get("route") == "mesh":
+            data["functional_ops"] = []
 
         for list_field in ("functional_features", "style_keywords"):
             if isinstance(raw.get(list_field), list) and raw[list_field]:
+                # Don't let LLM inject hallucinated MagSafe/charger features onto pure MESH figurines!
+                if list_field == "functional_features" and is_char_base and data.get("route") == "mesh" and not user_asked_utility:
+                    continue
                 data[list_field] = [str(x) for x in raw[list_field][:8]]
 
         if isinstance(raw.get("parametric_params"), dict):
@@ -407,22 +431,40 @@ class ConversationalDesigner:
         elif any(k in low for k in ("榫卯", "tenon", "mortise")):
             spec.joint_type = JointType.PRESS_TENON
 
-        # Parse colors from message or explicit HEX codes
+        # Parse colors from message or explicit HEX codes.
+        # Guard against character/object nouns containing color characters (e.g. "橘子", "小黄人", "大白", "黑豹", "绿巨人")
+        # accidentally wiping out a curated 4-color canonical character palette!
+        hex_matches = re.findall(r"#[0-9A-Fa-f]{6}", text)
+        explicit_repaint_intent = bool(hex_matches) or any(
+            k in low
+            for k in (
+                "改成", "换成", "涂成", "配色", "双色", "全黑", "全白", "全金", "纯白", "纯黑",
+                "repaint", "recolor", "color scheme", "palette", "change color", "swap color",
+            )
+        )
         found_colors: list[tuple[str, str]] = []
-        for hx in re.findall(r"#[0-9A-Fa-f]{6}", text):
+        for hx in hex_matches:
             found_colors.append((f"Custom {hx.upper()}", hx.upper()))
+        # Strip non-color compound object words before keyword scan
+        color_scan_text = low
+        for ignore_noun in (
+            "橘子", "橙子", "柑橘", "小黄人", "大白", "黑豹", "黑武士", "绿巨人", "白兵", "红熊猫",
+            "小黄鸭", "红白机", "蓝胖子", "钢铁侠", "青蛙", "白雪", "金毛", "灰太狼", "紫霞",
+        ):
+            color_scan_text = color_scan_text.replace(ignore_noun, " ")
         for kw, pair in COLOR_KEYWORDS.items():
-            if kw in low and pair[1] not in [c[1] for c in found_colors]:
+            if kw in color_scan_text and pair[1] not in [c[1] for c in found_colors]:
                 found_colors.append(pair)
 
         max_capture = max(4, spec.ams_units * 4) if spec.ams_units > 0 else 4
-        if found_colors:
+        allow_color_override = (char_preset is None) or explicit_repaint_intent or (len(found_colors) >= 2)
+        if found_colors and allow_color_override:
             roles = ["main body", "accent trim", "base / detail", "logo / highlight"]
             spec.filaments = [
                 FilamentSlot(slot=i + 1, name=name, hex_color=hx, role=roles[i % len(roles)])
                 for i, (name, hx) in enumerate(found_colors[:max_capture])
             ]
-        elif state.references and state.references[-1].extracted_colors and not state.history:
+        elif state.references and state.references[-1].extracted_colors and not state.history and char_preset is None:
             ref_cols = state.references[-1].extracted_colors[:max_capture]
             spec.filaments = [
                 FilamentSlot(slot=i + 1, name=f"Ref Color {i+1}", hex_color=hx, role=("main body" if i == 0 else f"accent {i}"))
@@ -446,12 +488,26 @@ class ConversationalDesigner:
         if not spec.summary:
             spec.summary = text[:160].strip()
 
-        color_names = ", ".join(f"{f.name}" for f in spec.filaments[:4])
-        spec.prompt_2d = (
-            f"Isometric 3/4 studio product render of a 3D-printable {spec.title}, "
-            f"matte PLA colors: {color_names}, chunky printable geometry, "
-            f"isolated single object on pure white background, soft studio light, no text, no letters"
-        )
+        # Preserve curated character prompt_2d (never overwrite with generic title-only template!)
+        if char_preset is not None:
+            extra_func_hint = ""
+            if spec.route == EngineRoute.HYBRID and spec.functional_ops:
+                op_hints = {
+                    "magsafe_recess": "with circular MagSafe wireless charger dock on chest",
+                    "hollow_cavity": "functional desk pen holder organizer",
+                    "phone_slot": "functional angled smartphone stand cradle",
+                }
+                first_op = spec.functional_ops[0].op
+                if first_op in op_hints:
+                    extra_func_hint = f", {op_hints[first_op]}"
+            spec.prompt_2d = f"{char_preset.prompt_2d}{extra_func_hint}"
+        else:
+            color_names = ", ".join(f"{f.name}" for f in spec.filaments[:4])
+            spec.prompt_2d = (
+                f"Isometric 3/4 studio product render of a 3D-printable {spec.title}, "
+                f"matte PLA colors: {color_names}, chunky printable geometry, "
+                f"isolated single object on pure white background, soft studio light, no text, no letters"
+            )
         spec.confirmed_by_user = False
         return spec
 

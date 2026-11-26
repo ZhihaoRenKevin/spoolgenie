@@ -31,7 +31,10 @@ from spoolgenie.print_prep.color_quantizer import (
 )
 from spoolgenie.print_prep.functional_carver import apply_functional_ops_modular
 from spoolgenie.print_prep.modularizer import decompose_mesh_into_solid_modules
-from spoolgenie.print_prep.physics_engine import evaluate_physics_stability
+from spoolgenie.print_prep.physics_engine import (
+    evaluate_physics_stability,
+    optimize_assembly_with_physics,
+)
 from spoolgenie.print_prep.repair import (
     evaluate_dfm,
     repair_single_mesh,
@@ -356,15 +359,29 @@ class SpoolGenieSession:
                 )
                 raw_parts.extend(extra_func_parts)
             else:
-                # Decompose organic solid into clean watertight anatomical solid modules, each in 1 pure color!
+                # Decompose organic solid into clean watertight anatomical solid modules with 2D-guided chromatic voting!
                 raw_parts = decompose_mesh_into_solid_modules(
                     raw_parts[0].mesh,
                     active_filaments,
                     base_name=spec.title.replace(" ", "_"),
                     extra_functional_parts=extra_func_parts,
+                    reference_image_path=latest_concept_path,
                 )
                 face_slots_single = None
                 coloring_method = "modular_solid"
+
+        # 3.5 Closed-Loop Physics-Guided Structural Auto-Optimization (Diagnose -> Remediate -> Re-Verify!)
+        if face_slots_single is None:
+            raw_parts, physics_report = optimize_assembly_with_physics(
+                raw_parts,
+                effective_spec_for_budget,
+                filaments=active_filaments,
+                auto_stabilize=True,
+            )
+        else:
+            physics_report = evaluate_physics_stability(raw_parts, effective_spec_for_budget)
+        opt_wall_loops = physics_report.recommended_wall_loops
+        opt_infill_str = f"{physics_report.recommended_infill_pct}%"
 
         # 4. Oversize-Bed Auto-Split & No-AMS Glue-Free Mechanical Joints!
         assembled_parts = list(raw_parts)
@@ -429,6 +446,8 @@ class SpoolGenieSession:
                 active_filaments,
                 threemf_path,
                 model_title=spec.title,
+                wall_loops=opt_wall_loops,
+                sparse_infill_density=opt_infill_str,
             )
         else:
             export_multipart_bambu_3mf(
@@ -437,6 +456,8 @@ class SpoolGenieSession:
                 threemf_path,
                 model_title=spec.title,
                 as_separate_objects=False,
+                wall_loops=opt_wall_loops,
+                sparse_infill_density=opt_infill_str,
             )
 
         # Unified STL for universal slicers
@@ -495,6 +516,8 @@ class SpoolGenieSession:
                 split_3mf_path,
                 model_title=f"{spec.title} (No-AMS Glue-Free Plates)",
                 as_separate_objects=True,
+                wall_loops=opt_wall_loops,
+                sparse_infill_density=opt_infill_str,
             )
             export_colored_preview_glb(split_plate_parts, active_filaments, split_glb_path)
 
@@ -517,7 +540,7 @@ class SpoolGenieSession:
                 )
             )
 
-        # 6. Evaluate DFM Printability & Anisotropic FDM Structural Physics / Stability Report
+        # 6. Evaluate DFM Printability & Attach Closed-Loop Structural Physics / Stability Report
         dfm = evaluate_dfm(
             [p.mesh for p in (split_plate_parts or assembled_parts)],
             spec=spec,
@@ -526,7 +549,6 @@ class SpoolGenieSession:
             effective_mode=effective_mode.value,
             joint_type_used=joint_used,
         )
-        physics_report = evaluate_physics_stability(assembled_parts, effective_spec_for_budget)
         dfm.coloring_method = coloring_method
         dfm.color_decisions = budget.decisions
         dfm.filament_recommendations = filament_recs

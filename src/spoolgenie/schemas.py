@@ -201,6 +201,10 @@ class PhysicsStabilityReport(BaseModel):
     tip_deflection_mm: float = 0.0
     stability_score: int = 100
     overall_verdict: Literal["stable", "caution", "unstable"] = "stable"
+    recommended_wall_loops: int = 3
+    recommended_infill_pct: int = 15
+    recommended_material: str | None = None
+    auto_remediations: list[str] = Field(default_factory=list)
     checks: list[PhysicsCheckItem] = Field(default_factory=list)
 
 

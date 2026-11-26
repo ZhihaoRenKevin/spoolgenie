@@ -194,7 +194,11 @@ class ConversationalDesigner:
         user_mentioned_color = any(k in user_message.lower() for k in COLOR_KEYWORDS) or bool(re.search(r"#[0-9A-Fa-f]{6}", user_message))
         is_char_base = base.category in ("figurine",) or any(
             base.category.startswith(p)
-            for p in ("marvel_", "dc_", "disney_", "pixar_", "universal_", "dreamworks_", "scifi_", "starwars_", "hp_", "movie_", "anime_", "game_", "toy_", "animal_", "plant_", "decor_")
+            for p in (
+                "marvel_", "dc_", "disney_", "pixar_", "universal_", "dreamworks_",
+                "scifi_", "starwars_", "hp_", "movie_", "anime_", "game_", "toy_",
+                "animal_", "plant_", "decor_", "veh_", "food_", "hobby_", "myth_", "season_",
+            )
         )
 
         for field in ("title", "summary", "prompt_2d"):
@@ -220,8 +224,12 @@ class ConversationalDesigner:
                     dims[k] = round(float(v), 2)
             data["dimensions"] = dims
 
-        # Preserve curated character palette unless user explicitly requested different colors!
-        if isinstance(raw.get("filaments"), list) and raw["filaments"] and (not is_char_base or user_mentioned_color or len(raw["filaments"]) >= len(base.filaments)):
+        # Canon-First Palette Lock: preserve curated canonical character/animal/plant colors & roles
+        # unless the user explicitly asks to repaint with different colors!
+        explicit_repaint = user_mentioned_color and any(
+            k in user_message.lower() for k in ("改", "换", "涂成", "变成", "change", "repaint", "replace", "swap", "make it")
+        )
+        if isinstance(raw.get("filaments"), list) and raw["filaments"] and (not is_char_base or explicit_repaint):
             cleaned: list[dict[str, Any]] = []
             for idx, item in enumerate(raw["filaments"][:16], start=1):
                 if not isinstance(item, dict):
@@ -271,10 +279,11 @@ class ConversationalDesigner:
         # Check curated Disney / Universal / Marvel / Anime character catalog first!
         char_preset = match_character_catalog(text)
         if char_preset is not None:
+            is_new_subject = (not state.history) or (current.category != char_preset.id)
             spec.title = char_preset.name
             spec.category = char_preset.id
             spec.route = EngineRoute(char_preset.route)
-            if not state.history:
+            if is_new_subject:
                 w, d, h = char_preset.default_dims_mm
                 spec.dimensions = DimensionsMM(width_mm=w, depth_mm=d, height_mm=h)
                 spec.filaments = [

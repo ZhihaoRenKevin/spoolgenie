@@ -14,6 +14,13 @@ let active3DTab = '3d';
 let autoSpin = true;
 let wireframeOn = false;
 let lampRubCount = 0;
+let ownedFilamentNames = [];
+try {
+  ownedFilamentNames = JSON.parse(localStorage.getItem('sg_owned_filaments') || '[]');
+} catch {
+  ownedFilamentNames = [];
+}
+let latestMatchRecs = [];
 
 let threeCtx = null;
 const gltfLoader = new GLTFLoader();
@@ -79,7 +86,15 @@ const I18N = {
       { v: false, t: '仅铸造 .3MF / .STL / .STEP', s: '拖入切片软件精调' },
     ],
     add_color: '+ 加一色',
-    swatch_hint: '点击拓竹 PLA 色珠快速加入：',
+    swatch_hint: '点击拓竹 PLA 色珠快速加入原著配色：',
+    owned_title: '🧵 我的已有耗材库（先贴合原著 → 匹配已有色 → 无邻近色推荐拓竹官网）',
+    owned_clear: '清空已有',
+    owned_empty_hint: '勾选你手头已有的耗材色卷，系统会自动按 CIELAB 色差比对；没有邻近色时直接给出拓竹官方商城直达链接。',
+    rec_owned: (name, de) => `✅ 已有邻近色：${name} (ΔE=${de})`,
+    rec_buy: (bambu, de) => `🛒 已有色差过大 (ΔE=${de}) · 保留原著色，推荐补购：拓竹 ${bambu}`,
+    rec_canon: (bambu) => `🎨 原著推荐：拓竹 ${bambu}`,
+    buy_btn: '去拓竹官方商城下单 ↗',
+    modules_title: '🧩 模块化整体上色分件（每个独立水密实体一个纯色，非表面涂色）：',
     refresh_2d_btn: '🔄 应用修改 · 重绘 2D 幻象',
     build_3d_btn: '✨ 吟唱具现 · 铸造 3D 与 .3MF',
     rendering_2d_inline: '🧞‍♂️ 神灯正在凝结 2D 愿望幻象，你可以继续补充想法…',
@@ -174,6 +189,14 @@ const I18N = {
     ],
     add_color: '+ Add Color',
     swatch_hint: 'Quick Bambu PLA swatches:',
+    owned_title: '🧵 My Owned Filaments (Canon-first → Match owned → Official Bambu Store if missing)',
+    owned_clear: 'Clear owned',
+    owned_empty_hint: 'Tick the spools you already own. SpoolGenie matches canon colors via CIELAB ΔE and links to the official Bambu Lab Store when no close color exists.',
+    rec_owned: (name, de) => `✅ Owned match: ${name} (ΔE=${de})`,
+    rec_buy: (bambu, de) => `🛒 No close spool (nearest ΔE=${de}) · Kept canon color — recommend Bambu ${bambu}`,
+    rec_canon: (bambu) => `🎨 Canon palette: Bambu ${bambu}`,
+    buy_btn: 'Bambu Official Store ↗',
+    modules_title: '🧩 Modular Whole-Part Colored Solids (1 clean solid filament per module, zero surface paint):',
     refresh_2d_btn: '🔄 Update & Re-conjure 2D',
     build_3d_btn: '✨ Manifest 3D & .3MF',
     rendering_2d_inline: '🧞‍♂️ Conjuring your 2D wish vision in background — keep chatting anytime…',
@@ -422,15 +445,87 @@ function renderAttachedRefs() {
   }
 }
 
+function getOwnedFilamentSlots() {
+  const catalog = meta?.official_filaments || [];
+  const chosen = catalog.filter((f) => ownedFilamentNames.includes(f.name));
+  return chosen.map((f, idx) => ({
+    slot: idx + 1,
+    name: lang === 'zh' ? f.name_zh : f.name,
+    hex_color: f.hex_color,
+    material: 'PLA',
+    role: 'owned',
+  }));
+}
+
 function buildSpecPatch(spec) {
   return {
     printer_id: spec.printer_id,
     ams_units: spec.ams_units,
     multicolor_mode: spec.multicolor_mode,
     joint_type: spec.joint_type,
+    coloring_mode: 'modular',
     dimensions: spec.dimensions,
     filaments: spec.filaments,
+    owned_filaments: getOwnedFilamentSlots(),
   };
+}
+
+function renderRecRowsHtml(recs) {
+  if (!recs || !recs.length) return '';
+  return recs
+    .map((r) => {
+      const storeUrl = lang === 'zh' ? r.store_url_cn : r.store_url_global;
+      const bambuLabel = `${r.bambu_series} ${lang === 'zh' ? (r.bambu_name_zh || r.bambu_name) : r.bambu_name}`;
+      if (r.status === 'owned_match') {
+        return `<div class="rec-row matched">
+          <div class="rec-left">
+            <span class="dot-sm" style="background:${r.canon_hex}"></span>
+            <strong>${r.role || r.canon_name}</strong>
+            <span>${t('rec_owned')(r.matched_owned_name, r.delta_e)}</span>
+          </div>
+        </div>`;
+      }
+      if (r.status === 'purchase_recommended') {
+        return `<div class="rec-row buy">
+          <div class="rec-left">
+            <span class="dot-sm" style="background:${r.canon_hex}"></span>
+            <strong>${r.role || r.canon_name}</strong>
+            <span>${t('rec_buy')(bambuLabel, r.delta_e)}</span>
+          </div>
+          <a class="store-link-btn" href="${storeUrl}" target="_blank" rel="noopener">${t('buy_btn')}</a>
+        </div>`;
+      }
+      return `<div class="rec-row">
+        <div class="rec-left">
+          <span class="dot-sm" style="background:${r.canon_hex}"></span>
+          <strong>${r.role || r.canon_name}</strong>
+          <span class="choice-hint">${t('rec_canon')(bambuLabel)}</span>
+        </div>
+        <a class="btn-link" href="${storeUrl}" target="_blank" rel="noopener">${t('buy_btn')}</a>
+      </div>`;
+    })
+    .join('');
+}
+
+async function refreshLiveFilamentMatch(spec, recBoxEl) {
+  if (!spec?.filaments?.length || !recBoxEl) return;
+  try {
+    const r = await fetch('/api/match-filaments', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        canon_filaments: spec.filaments,
+        owned_filaments: getOwnedFilamentSlots(),
+        max_delta_e: 22.0,
+      }),
+    });
+    if (!r.ok) return;
+    const data = await r.json();
+    latestMatchRecs = data.recommendations || [];
+    recBoxEl.innerHTML = renderRecRowsHtml(latestMatchRecs);
+  } catch {
+    // non-fatal
+  }
 }
 
 function buildInlineSetupCard(spec, latestConcept) {
@@ -523,6 +618,25 @@ function buildInlineSetupCard(spec, latestConcept) {
           ${Object.entries(meta?.swatches || {}).map(([name, hx]) => `
             <button type="button" class="swatch-dot" style="background:${hx}" title="${name} (${hx})" data-name="${name}" data-hex="${hx}"></button>
           `).join('')}
+        </div>
+
+        <div class="owned-box">
+          <div class="choice-label">
+            <span>${t('owned_title')}</span>
+            <button type="button" class="btn-link js-clear-owned">${t('owned_clear')}</button>
+          </div>
+          <div class="choice-hint">${t('owned_empty_hint')}</div>
+          <div class="owned-shelf js-owned-shelf">
+            ${(meta?.official_filaments || []).map((f) => {
+              const isOwned = ownedFilamentNames.includes(f.name);
+              const lbl = lang === 'zh' ? f.name_zh : f.name;
+              return `<button type="button" class="owned-chip ${isOwned ? 'owned' : ''}" data-fname="${f.name}">
+                <span class="dot-sm" style="background:${f.hex_color}"></span>
+                <span>${isOwned ? '✓ ' : ''}${lbl}</span>
+              </button>`;
+            }).join('')}
+          </div>
+          <div class="rec-list js-rec-list">${renderRecRowsHtml(latestMatchRecs)}</div>
         </div>
       </div>
 
@@ -631,6 +745,28 @@ function buildInlineSetupCard(spec, latestConcept) {
       }
     };
   });
+
+  const recListEl = card.querySelector('.js-rec-list');
+  card.querySelectorAll('.js-owned-shelf .owned-chip').forEach((btn) => {
+    btn.onclick = () => {
+      syncInputs();
+      const fn = btn.dataset.fname;
+      if (ownedFilamentNames.includes(fn)) {
+        ownedFilamentNames = ownedFilamentNames.filter((x) => x !== fn);
+      } else {
+        ownedFilamentNames = [...ownedFilamentNames, fn];
+      }
+      localStorage.setItem('sg_owned_filaments', JSON.stringify(ownedFilamentNames));
+      renderStream();
+    };
+  });
+  card.querySelector('.js-clear-owned').onclick = () => {
+    syncInputs();
+    ownedFilamentNames = [];
+    localStorage.setItem('sg_owned_filaments', '[]');
+    renderStream();
+  };
+  refreshLiveFilamentMatch(spec, recListEl);
 
   card.querySelector('.js-refresh-2d').onclick = async (e) => {
     syncInputs();
@@ -757,6 +893,22 @@ function buildInline3DExportCard() {
           <div class="metric-box"><strong>${exp.estimated_flush_g ?? 0} g</strong><span>${t('m_flush')}</span></div>
           <div class="metric-box"><strong>${exp.estimated_print_minutes ? Math.round(exp.estimated_print_minutes) + ' min' : '-'}</strong><span>${t('m_time')}</span></div>
         </div>
+        ${(d.split_parts || []).length > 1 ? `
+          <div class="choice-section">
+            <div class="choice-hint">${t('modules_title')}</div>
+            <div class="module-strip">
+              ${d.split_parts.map((sp) => `
+                <span class="mod-badge">
+                  <span class="dot-sm" style="background:${sp.hex_color}"></span>
+                  <span>${sp.name} · ${sp.filament_name}</span>
+                </span>
+              `).join('')}
+            </div>
+          </div>
+        ` : ''}
+        ${(d.filament_recommendations || []).some((r) => r.status === 'purchase_recommended') ? `
+          <div class="rec-list">${renderRecRowsHtml(d.filament_recommendations.filter((r) => r.status === 'purchase_recommended'))}</div>
+        ` : ''}
         <details class="dfm-details">
           <summary>${t('dfm_toggle')}</summary>
           <div class="dfm-list">${dfmLines}</div>

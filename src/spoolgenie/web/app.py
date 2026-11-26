@@ -15,12 +15,19 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from spoolgenie import __version__
-from spoolgenie.config import BAMBU_PLA_SWATCHES, PRINTER_PROFILES, get_settings
+from spoolgenie.config import (
+    BAMBU_OFFICIAL_FILAMENTS,
+    BAMBU_PLA_SWATCHES,
+    PRINTER_PROFILES,
+    get_settings,
+)
 from spoolgenie.doctor import run_doctor
 from spoolgenie.knowledge.character_catalog import CHARACTER_CATALOG, list_local_loras
 from spoolgenie.knowledge.kb import CHARACTER_STYLE_PRESETS, PrintKnowledgeBase
 from spoolgenie.pipeline import SpoolGenieSession
+from spoolgenie.print_prep.color_quantizer import match_canon_to_owned_filaments
 from spoolgenie.reference.makerworld import search_makerworld
+from spoolgenie.schemas import FilamentSlot
 
 STATIC_DIR = Path(__file__).parent / "static"
 SERVER_RUNTIME: dict[str, Any] = {
@@ -206,6 +213,17 @@ def get_meta() -> dict[str, Any]:
             for pid, p in PRINTER_PROFILES.items()
         },
         "swatches": BAMBU_PLA_SWATCHES,
+        "official_filaments": [
+            {
+                "name": f.name,
+                "name_zh": f.name_zh,
+                "hex_color": f.hex_color,
+                "series": f.series,
+                "store_url_cn": f.store_url_cn,
+                "store_url_global": f.store_url_global,
+            }
+            for f in BAMBU_OFFICIAL_FILAMENTS
+        ],
         "character_presets": {k: v["label"] for k, v in CHARACTER_STYLE_PRESETS.items()},
         "character_catalog": [
             {
@@ -307,6 +325,26 @@ def confirm_build(project_id: str, req: BuildRequest | None = None) -> dict[str,
         run_slicer=req.run_slicer,
     )
     return _decorate_state_urls(session)
+
+
+class FilamentMatchRequest(BaseModel):
+    canon_filaments: list[FilamentSlot]
+    owned_filaments: list[FilamentSlot] = []
+    max_delta_e: float = 22.0
+
+
+@app.post("/api/match-filaments")
+def api_match_filaments(req: FilamentMatchRequest) -> dict[str, Any]:
+    """Match canonical model colors against user's owned spools and recommend Bambu Lab official store links for missing colors."""
+    resolved, recs = match_canon_to_owned_filaments(
+        req.canon_filaments,
+        owned_filaments=req.owned_filaments,
+        max_delta_e=req.max_delta_e,
+    )
+    return {
+        "resolved_filaments": [f.model_dump() for f in resolved],
+        "recommendations": [r.model_dump() for r in recs],
+    }
 
 
 @app.get("/api/makerworld/search")

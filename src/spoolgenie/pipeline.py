@@ -24,10 +24,12 @@ from spoolgenie.print_prep.bambu_3mf import (
     export_painted_bambu_3mf,
 )
 from spoolgenie.print_prep.color_quantizer import (
+    match_canon_to_owned_filaments,
     quantize_mesh_to_ams_slots,
     resolve_ams_color_budget,
 )
-from spoolgenie.print_prep.functional_carver import apply_functional_ops_to_mesh
+from spoolgenie.print_prep.functional_carver import apply_functional_ops_modular
+from spoolgenie.print_prep.modularizer import decompose_mesh_into_solid_modules
 from spoolgenie.print_prep.repair import (
     evaluate_dfm,
     repair_single_mesh,
@@ -135,7 +137,11 @@ class SpoolGenieSession:
         # Enrich with Character Preset (only when generic figurine without a curated catalog prompt) or MakerWorld RAG priors
         is_catalog_char = any(
             new_spec.category.startswith(p)
-            for p in ("marvel_", "dc_", "disney_", "pixar_", "universal_", "dreamworks_", "scifi_", "starwars_", "hp_", "movie_", "anime_", "game_", "toy_", "animal_", "plant_", "decor_")
+            for p in (
+                "marvel_", "dc_", "disney_", "pixar_", "universal_", "dreamworks_",
+                "scifi_", "starwars_", "hp_", "movie_", "anime_", "game_", "toy_",
+                "animal_", "plant_", "decor_", "veh_", "food_", "hobby_", "myth_", "season_",
+            )
         )
         char_match = self.kb.match_character_preset(user_message)
         if char_match and not is_catalog_char and new_spec.route in (EngineRoute.MESH, EngineRoute.HYBRID):
@@ -210,9 +216,18 @@ class SpoolGenieSession:
         spec.confirmed_by_user = True
         latest_concept_path = self.state.concepts[-1].image_path if self.state.concepts else None
 
+        # 0. Canon-First Palette -> Match Against User's Owned Filaments + Official Bambu Lab Store Recommendations!
+        matched_filaments, filament_recs = match_canon_to_owned_filaments(
+            spec.filaments,
+            owned_filaments=spec.owned_filaments,
+            max_delta_e=22.0,
+        )
+        effective_spec_for_budget = spec.model_copy(update={"filaments": matched_filaments})
+
         repaired_any = False
         face_slots_single: np.ndarray | None = None
         raw_parts: list[PrintPart] = []
+        extra_func_parts: list[PrintPart] = []
         step_path: Path | None = None
         cad_script_path: Path | None = None
 
@@ -220,7 +235,7 @@ class SpoolGenieSession:
         if spec.route == EngineRoute.CAD:
             step_file = self.project_dir / f"{self.state.project_id}.step"
             cad_res = build_parametric_model(
-                spec,
+                effective_spec_for_budget,
                 step_output_path=step_file,
                 llm=self.llm,
                 custom_code=custom_cad_code,
@@ -239,7 +254,9 @@ class SpoolGenieSession:
         else:
             # MESH or HYBRID: Start with the TRUE 360-degree 3D sculpted object/character from Hunyuan3D-2 / 3D engine!
             self.llm.release_vram()
-            mesh_res = generate_organic_mesh(spec, latest_concept_path, self.settings, force_backend=force_mesh_backend)
+            mesh_res = generate_organic_mesh(
+                effective_spec_for_budget, latest_concept_path, self.settings, force_backend=force_mesh_backend
+            )
             rep = repair_single_mesh(mesh_res.mesh)
             repaired_any = rep.repaired
             body_mesh = scale_and_ground_meshes(
@@ -251,53 +268,66 @@ class SpoolGenieSession:
             )[0]
 
             # For HYBRID (e.g. WALL-E pen holder / Totoro phone dock / Iron Man MagSafe charger):
-            # Carve exact millimeter mechanical utility DIRECTLY into the real 3D character mesh via manifold3d!
+            # Carve exact subtractive cavities AND emit additive functional attachments as SEPARATE colored solid modules!
             if spec.route == EngineRoute.HYBRID and spec.functional_ops:
-                carved_mesh, ops_log = apply_functional_ops_to_mesh(
+                body_mesh, extra_func_parts, ops_log = apply_functional_ops_modular(
                     body_mesh,
                     spec.functional_ops,
                     wall_thickness_mm=spec.dimensions.wall_thickness_mm,
                 )
-                body_mesh = carved_mesh
                 self.state.extra["functional_ops_applied"] = ops_log
 
             raw_parts = [PrintPart(name=spec.title.replace(" ", "_"), slot=1, mesh=body_mesh)]
             self.state.extra["mesh_backend_used"] = mesh_res.backend
             self.state.extra["mesh_notes"] = mesh_res.notes
 
-        # 2. Millimeter Scaling & Z=0 Grounding (exact CAD parts stay unscaled if within 2%)
+        # 2. Millimeter Scaling & Z=0 Grounding (keeps character + modular functional accessories aligned!)
+        all_pre_scale = raw_parts + extra_func_parts
         scaled_meshes = scale_and_ground_meshes(
-            [p.mesh for p in raw_parts],
+            [p.mesh for p in all_pre_scale],
             target_w=spec.dimensions.width_mm,
             target_d=spec.dimensions.depth_mm,
             target_h=spec.dimensions.height_mm,
             preserve_aspect=True,
         )
-        for p, sm in zip(raw_parts, scaled_meshes):
+        for p, sm in zip(all_pre_scale, scaled_meshes):
             p.mesh = sm
 
         # 3. AMS-Count Color Budget Resolution (decides final colors & AMS vs No-AMS glue-free split!)
         slot_areas: dict[int, float] = {}
-        for p in raw_parts:
+        for p in all_pre_scale:
             slot_areas[p.slot] = slot_areas.get(p.slot, 0.0) + float(p.mesh.area)
 
-        budget = resolve_ams_color_budget(spec, slot_area_weights=slot_areas)
+        budget = resolve_ams_color_budget(effective_spec_for_budget, slot_area_weights=slot_areas)
         active_filaments = budget.active_filaments
         effective_mode = budget.effective_mode
 
-        # Remap CAD/multipart slots according to AMS budget decisions
-        for p in raw_parts:
+        for p in all_pre_scale:
             p.slot = budget.slot_remap.get(p.slot, 1)
 
-        # For single-manifold organic/hybrid meshes with >1 active color, quantize triangles in CIELAB -> Bambu paint_color!
+        # Modular Whole-Part Coloring (Default!) vs Optional Legacy Surface Paint
         is_single_organic = spec.route in (EngineRoute.MESH, EngineRoute.HYBRID) and len(raw_parts) == 1
-        if is_single_organic and len(active_filaments) > 1:
-            face_slots_single, active_filaments = quantize_mesh_to_ams_slots(
-                raw_parts[0].mesh,
-                active_filaments,
-                reference_image_path=latest_concept_path,
-                smooth_iters=8,
-            )
+        coloring_method = "modular_solid"
+        if is_single_organic:
+            if spec.coloring_mode == "surface_paint" and len(active_filaments) > 1:
+                coloring_method = "surface_paint"
+                face_slots_single, active_filaments = quantize_mesh_to_ams_slots(
+                    raw_parts[0].mesh,
+                    active_filaments,
+                    reference_image_path=latest_concept_path,
+                    smooth_iters=8,
+                )
+                raw_parts.extend(extra_func_parts)
+            else:
+                # Decompose organic solid into clean watertight anatomical solid modules, each in 1 pure color!
+                raw_parts = decompose_mesh_into_solid_modules(
+                    raw_parts[0].mesh,
+                    active_filaments,
+                    base_name=spec.title.replace(" ", "_"),
+                    extra_functional_parts=extra_func_parts,
+                )
+                face_slots_single = None
+                coloring_method = "modular_solid"
 
         # 4. Oversize-Bed Auto-Split & No-AMS Glue-Free Mechanical Joints!
         assembled_parts = list(raw_parts)
@@ -459,7 +489,9 @@ class SpoolGenieSession:
             effective_mode=effective_mode.value,
             joint_type_used=joint_used,
         )
+        dfm.coloring_method = coloring_method
         dfm.color_decisions = budget.decisions
+        dfm.filament_recommendations = filament_recs
         dfm.split_parts = split_parts_info
 
         # 7. Headless Slicer or Physics-Based Estimate

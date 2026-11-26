@@ -104,25 +104,45 @@ def render_shaded_mesh_preview(
     for verts, faces, base_rgb in parts:
         if len(faces) == 0:
             continue
-        # Subsample overly dense meshes so preview stays crisp and instant (<0.2s)
-        step = max(1, len(faces) // 14000)
-        f_use = faces[::step]
-        v_rot = ((verts - center) @ rot.T)
+        v_arr = np.asarray(verts, dtype=np.float64)
+        f_arr = np.asarray(faces, dtype=np.int64)
+
+        # Subdivide oversized CAD / planar box faces so painter's algorithm never produces Z-overlap artifacts!
+        tri_pts = v_arr[f_arr]
+        max_edge = float(
+            max(
+                np.linalg.norm(tri_pts[:, 1] - tri_pts[:, 0], axis=1).max(),
+                np.linalg.norm(tri_pts[:, 2] - tri_pts[:, 1], axis=1).max(),
+                np.linalg.norm(tri_pts[:, 0] - tri_pts[:, 2], axis=1).max(),
+            )
+        )
+        if max_edge > span * 0.14 and len(f_arr) < 4000:
+            try:
+                import trimesh.remesh
+
+                v_arr, f_arr = trimesh.remesh.subdivide_to_size(v_arr, f_arr, max_edge=span * 0.08, max_iter=3)
+            except Exception:
+                pass
+
+        # Mild subsample only for ultra-dense meshes (>32k faces per part)
+        step = max(1, len(f_arr) // 28000)
+        f_use = f_arr[::step]
+        v_rot = (v_arr - center) @ rot.T
         tri_v = v_rot[f_use]  # (N, 3, 3)
 
-        # Face normals & back-face culling (camera looks along -Y -> +Y after rx/rz; screen uses X, -Z, depth = Y)
         e1 = tri_v[:, 1] - tri_v[:, 0]
         e2 = tri_v[:, 2] - tri_v[:, 0]
         normals = np.cross(e1, e2)
         norms = np.linalg.norm(normals, axis=1, keepdims=True)
-        valid = norms[:, 0] > 1e-8
+        # Keep non-degenerate, front-facing triangles (camera looks along +Y in rotated coords -> front has normal.y < 0)
+        valid = (norms[:, 0] > 1e-8) & (normals[:, 1] <= norms[:, 0] * 0.15)
+        if valid.sum() < 4:
+            valid = norms[:, 0] > 1e-8
         tri_v = tri_v[valid]
         normals = normals[valid] / norms[valid]
 
-        # Camera view direction is (0, -1, 0) in rotated coords -> facing camera if normal.y < 0
-        # Handle both orientations nicely via abs diffuse lighting for thin/flipped faces
         ndotl = np.clip(normals @ light_dir, -0.35, 1.0)
-        shade = np.clip(0.38 + 0.62 * np.abs(ndotl) + 0.14 * np.maximum(normals[:, 2], 0.0), 0.22, 1.08)
+        shade = np.clip(0.42 + 0.56 * np.abs(ndotl) + 0.14 * np.maximum(normals[:, 2], 0.0), 0.25, 1.06)
 
         depths = tri_v[:, :, 1].mean(axis=1)
         px = cx + tri_v[:, :, 0] * scale

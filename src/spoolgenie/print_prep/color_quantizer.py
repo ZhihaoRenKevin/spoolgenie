@@ -10,7 +10,14 @@ import trimesh
 from PIL import Image
 from sklearn.cluster import KMeans
 
-from spoolgenie.schemas import ColorDecision, DesignSpec, FilamentSlot, MulticolorMode
+from spoolgenie.config import BAMBU_OFFICIAL_FILAMENTS, BambuOfficialFilament
+from spoolgenie.schemas import (
+    ColorDecision,
+    DesignSpec,
+    FilamentMatchRecommendation,
+    FilamentSlot,
+    MulticolorMode,
+)
 
 
 def hex_to_rgb01(hx: str) -> np.ndarray:
@@ -345,3 +352,136 @@ def quantize_mesh_to_ams_slots(
     smoothed = smooth_face_labels(mesh, nearest_idx, iterations=smooth_iters)
     slots = np.array([filaments[idx].slot for idx in smoothed], dtype=np.int32)
     return slots, filaments
+
+
+def find_closest_bambu_filament(hex_color: str, prefer_name: str = "") -> tuple[BambuOfficialFilament, float]:
+    """Return the perceptually closest official Bambu Lab filament and its CIELAB ΔE."""
+    target_lab = rgb01_to_lab(hex_to_rgb01(hex_color))[0]
+    wants_silk = any(k in prefer_name.lower() for k in ("silk", "gold", "silver", "metal", "chrome", "金", "银"))
+    best_item = BAMBU_OFFICIAL_FILAMENTS[0]
+    best_score = 1e9
+    best_de = 1e9
+    for item in BAMBU_OFFICIAL_FILAMENTS:
+        item_lab = rgb01_to_lab(hex_to_rgb01(item.hex_color))[0]
+        de = float(np.linalg.norm(target_lab - item_lab))
+        # Avoid recommending metallic Silk filaments for non-metallic matte/basic canon colors
+        penalty = 8.0 if (item.series == "PLA Silk" and not wants_silk) else 0.0
+        score = de + penalty
+        if score < best_score:
+            best_score = score
+            best_de = de
+            best_item = item
+    return best_item, round(best_de, 1)
+
+
+def match_canon_to_owned_filaments(
+    canon_filaments: list[FilamentSlot],
+    owned_filaments: list[FilamentSlot] | None = None,
+    max_delta_e: float = 22.0,
+) -> tuple[list[FilamentSlot], list[FilamentMatchRecommendation]]:
+    """Canon-first color matching against user's owned filaments + official Bambu Lab store recommendations.
+
+    Rules:
+      1. Preserve the canonical (source-faithful) palette FIRST.
+      2. If `owned_filaments` is provided:
+         - Compute CIELAB ΔE to every owned filament.
+         - If `min_de <= max_delta_e`, bind the slot cleanly to the user's closest owned spool (`owned_match`).
+         - If `min_de > max_delta_e` (no close neighbor in inventory!), KEEP the canonical color faithful
+           and recommend purchasing the closest official Bambu Lab spool (`purchase_recommended`) with direct
+           official store links (`store.bambulab.cn` and `store.bambulab.com`).
+      3. If `owned_filaments` is empty, return canonical slots with closest official Bambu store references (`canon_default`).
+    """
+    owned = list(owned_filaments or [])
+    owned_labs = (
+        np.vstack([rgb01_to_lab(hex_to_rgb01(f.hex_color)) for f in owned]) if owned else None
+    )
+
+    resolved_slots: list[FilamentSlot] = []
+    recs: list[FilamentMatchRecommendation] = []
+
+    for idx, cf in enumerate(canon_filaments, start=1):
+        bambu_best, _ = find_closest_bambu_filament(cf.hex_color, prefer_name=f"{cf.name} {cf.role}")
+        cf_lab = rgb01_to_lab(hex_to_rgb01(cf.hex_color))[0]
+
+        if owned and owned_labs is not None:
+            dists = np.linalg.norm(owned_labs - cf_lab[None, :], axis=1)
+            best_i = int(np.argmin(dists))
+            best_de = round(float(dists[best_i]), 1)
+            best_owned = owned[best_i]
+
+            if best_de <= max_delta_e:
+                resolved_slots.append(
+                    cf.model_copy(
+                        update={
+                            "slot": idx,
+                            "name": best_owned.name,
+                            "hex_color": best_owned.hex_color.upper(),
+                            "material": best_owned.material,
+                        }
+                    )
+                )
+                recs.append(
+                    FilamentMatchRecommendation(
+                        slot=idx,
+                        role=cf.role,
+                        canon_name=cf.name,
+                        canon_hex=cf.hex_color.upper(),
+                        status="owned_match",
+                        matched_owned_name=best_owned.name,
+                        matched_owned_hex=best_owned.hex_color.upper(),
+                        delta_e=best_de,
+                        bambu_name=bambu_best.name,
+                        bambu_name_zh=bambu_best.name_zh,
+                        bambu_hex=bambu_best.hex_color,
+                        bambu_series=bambu_best.series,
+                        store_url_cn=bambu_best.store_url_cn,
+                        store_url_global=bambu_best.store_url_global,
+                        reason=f"Matched owned spool '{best_owned.name}' (CIELAB ΔE={best_de} <= {max_delta_e:.0f}).",
+                    )
+                )
+            else:
+                # Keep canon color faithful! Recommend official Bambu Lab purchase.
+                resolved_slots.append(cf.model_copy(update={"slot": idx}))
+                recs.append(
+                    FilamentMatchRecommendation(
+                        slot=idx,
+                        role=cf.role,
+                        canon_name=cf.name,
+                        canon_hex=cf.hex_color.upper(),
+                        status="purchase_recommended",
+                        matched_owned_name=best_owned.name,
+                        matched_owned_hex=best_owned.hex_color.upper(),
+                        delta_e=best_de,
+                        bambu_name=bambu_best.name,
+                        bambu_name_zh=bambu_best.name_zh,
+                        bambu_hex=bambu_best.hex_color,
+                        bambu_series=bambu_best.series,
+                        store_url_cn=bambu_best.store_url_cn,
+                        store_url_global=bambu_best.store_url_global,
+                        reason=(
+                            f"No close color in your owned spools (nearest '{best_owned.name}', ΔE={best_de} > {max_delta_e:.0f}). "
+                            f"Kept canon '{cf.name}' — recommend Bambu Lab {bambu_best.series} {bambu_best.name}."
+                        ),
+                    )
+                )
+        else:
+            resolved_slots.append(cf.model_copy(update={"slot": idx}))
+            recs.append(
+                FilamentMatchRecommendation(
+                    slot=idx,
+                    role=cf.role,
+                    canon_name=cf.name,
+                    canon_hex=cf.hex_color.upper(),
+                    status="canon_default",
+                    delta_e=0.0,
+                    bambu_name=bambu_best.name,
+                    bambu_name_zh=bambu_best.name_zh,
+                    bambu_hex=bambu_best.hex_color,
+                    bambu_series=bambu_best.series,
+                    store_url_cn=bambu_best.store_url_cn,
+                    store_url_global=bambu_best.store_url_global,
+                    reason=f"Canonical palette matched to Bambu Lab {bambu_best.series} {bambu_best.name}.",
+                )
+            )
+
+    return resolved_slots, recs

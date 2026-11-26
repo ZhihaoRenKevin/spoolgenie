@@ -94,6 +94,14 @@ class DesignSpec(BaseModel):
             FilamentSlot(slot=2, name="Matte Mandarin Orange", hex_color="#F36C21", role="accent trim"),
         ]
     )
+    owned_filaments: list[FilamentSlot] = Field(
+        default_factory=list,
+        description="Optional list of filaments the user already owns; canon colors match these first via CIELAB ΔE before recommending Bambu Lab official store refills.",
+    )
+    coloring_mode: Literal["modular", "surface_paint"] = Field(
+        default="modular",
+        description="'modular' decomposes meshes into watertight whole-color solid modules (recommended); 'surface_paint' uses legacy per-triangle painting.",
+    )
     functional_features: list[str] = Field(default_factory=list)
     functional_ops: list[FunctionalOp] = Field(default_factory=list)
     style_keywords: list[str] = Field(default_factory=lambda: ["clean industrial", "chamfered edges"])
@@ -109,6 +117,24 @@ class ColorDecision(BaseModel):
     mapped_hex: str
     delta_e: float = 0.0
     action: Literal["kept", "merged", "monochrome_collapsed"] = "kept"
+    reason: str = ""
+
+
+class FilamentMatchRecommendation(BaseModel):
+    slot: int
+    role: str = ""
+    canon_name: str
+    canon_hex: str
+    status: Literal["canon_default", "owned_match", "purchase_recommended"] = "canon_default"
+    matched_owned_name: str | None = None
+    matched_owned_hex: str | None = None
+    delta_e: float = 0.0
+    bambu_name: str = ""
+    bambu_name_zh: str = ""
+    bambu_hex: str = "#2B2D30"
+    bambu_series: str = "PLA Matte"
+    store_url_cn: str = "https://store.bambulab.cn/products/pla-matte"
+    store_url_global: str = "https://store.bambulab.com/products/pla-matte"
     reason: str = ""
 
 
@@ -155,7 +181,9 @@ class DFMReport(BaseModel):
     ams_units_configured: int = 1
     effective_multicolor_mode: str = "ams"
     joint_type_used: str = "none"
+    coloring_method: str = "modular_solid"
     color_decisions: list[ColorDecision] = Field(default_factory=list)
+    filament_recommendations: list[FilamentMatchRecommendation] = Field(default_factory=list)
     split_parts: list[SplitPartInfo] = Field(default_factory=list)
     checks: list[DFMCheckItem] = Field(default_factory=list)
 

@@ -1,0 +1,11 @@
+pair_id,object_id,printer,material,variant,predicted_ams_waste_g,measured_ams_waste_g,predicted_tilt_loaded_deg,measured_ramp_tilt_deg,predicted_pull_force_n,measured_dynamometer_n,thermal_test_c,thermal_warp_mm,print_pass_bool,notes
+P01a,B02_IronMan_MagSafe,Bambu_P1S_AMS,PLA_Matte,Baseline_SurfacePaint_NoPhys,,,,,(target 4.5N),,48C_2hr,,,Expect PLA softening + easy tip on MagSafe pull
+P01b,B02_IronMan_MagSafe,Bambu_P1S_AMS,PETG_HF,Ours_FabGraphCut_JointOpt,,,,,(target 4.5N),,48C_2hr,,,4 walls / 25% gyroid + counter-balanced plinth + PETG HDT 69C
+P02a,A03_Capybara,Bambu_P1S_AMS,PLA_Matte,Baseline_SurfacePaint_NoPhys,,,,,,,26C,,,Check blotchy surface speckles & excess AMS swaps
+P02b,A03_Capybara,Bambu_P1S_AMS,PLA_Matte,Ours_FabGraphCut_JointOpt,,,,,,,26C,,,Verify clean curved module seams & flush waste reduction
+P03a,B01_WALLE_PenHolder,Bambu_P1S_AMS,PLA_Matte,Baseline_AI_OpenTreads,,,,,,,26C,,,Legacy open treads failure baseline
+P03b,B01_WALLE_PenHolder,Bambu_P1S_AMS,PLA_Matte,Ours_PrecisionCAD_ClosedTreads,,,,,,,26C,,,Verify 140g loaded pen stability & closed flat treads
+P04a,C01_HeadphoneStand,Bambu_P1S_NoAMS,PLA_Matte,Baseline_Upright_NoPlinth,,,,,(350g load),,26C,,,Check 350g cantilever tip & Z-layer neck bend
+P04b,C01_HeadphoneStand,Bambu_P1S_NoAMS,PLA_Matte,Ours_JointOpt_Dovetail_Flat,,,,,(350g load),,26C,,,Verify glue-free dovetail pull-out force & XY-plane strength
+P05a,B03_Totoro_PhoneStand,Bambu_P1S_AMS,PLA_Matte,Baseline_NoInternalHollow,,,,,(240g phone),,35C,,,Compare CoM height & tilt angle
+P05b,B03_Totoro_PhoneStand,Bambu_P1S_AMS,PLA_Matte,Ours_InternalCoM_Hollowing,,,,,(240g phone),,35C,,,Verify zero exterior distortion + improved ramp tilt angle
